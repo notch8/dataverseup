@@ -73,6 +73,10 @@ The chart does **not** install PostgreSQL by default. Supply DB settings with **
 
 Set `ingress.enabled: true`, `ingress.className` to your controller (e.g. `nginx`, `traefik`), and hosts/TLS to match your DNS. Payara serves **HTTP** on 8080; the Service fronts it on port **80** so Ingress backends stay HTTP.
 
+## Payara init scripts (DRY with Compose)
+
+The chart embeds the S3 and mail relay scripts from **`init.d/`** at the repo root via symlinks under `charts/dataverseup/files/`. Edit **`init.d/006-s3-aws-storage.sh`** or **`init.d/010-mailrelay-set.sh`** once; both Compose mounts and Helm ConfigMaps stay aligned. `helm package` resolves symlink content into the tarball.
+
 ## S3 file storage
 
 1. Create a Secret in the release namespace with keys matching `awsS3.secretKeys` (default: `credentials`, `config`) — same shape as AWS CLI config files.
