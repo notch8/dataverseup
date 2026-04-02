@@ -1,0 +1,28 @@
+#!/bin/sh
+#
+# Helm upgrade/install for charts/dataverseup (from repository root).
+# Pass extra flags via HELM_EXTRA_ARGS, e.g.:
+#   HELM_EXTRA_ARGS="--values ./my-values.yaml --wait --timeout 45m0s" ./bin/helm_deploy my-release my-namespace
+#
+# A second --timeout in HELM_EXTRA_ARGS overrides the default below (Helm uses the last value).
+
+set -e
+
+if [ -z "${1:-}" ] || [ -z "${2:-}" ]; then
+  echo "Usage: ./bin/helm_deploy RELEASE_NAME NAMESPACE" >&2
+  echo "  Run from the dataverseup repository root." >&2
+  exit 1
+fi
+
+release_name="$1"
+namespace="$2"
+
+helm upgrade \
+  --install \
+  --atomic \
+  --timeout 30m0s \
+  ${HELM_EXTRA_ARGS:-} \
+  --namespace="$namespace" \
+  --create-namespace \
+  "$release_name" \
+  "./charts/dataverseup"

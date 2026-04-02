@@ -34,5 +34,3 @@ See **[docs/HELM.md](../../docs/HELM.md)** in this repository for prerequisites,
 | `internalSolr` + `solrInit` | In-cluster Solr; requires **full** Solr conf ConfigMap |
 | `bootstrapJob` | First-time `configbaker` bootstrap |
 | `ingress` | HTTP routing to Service port 80 |
-
-Example skeleton: **`values-examples/internal-solr-starter.yaml`**.

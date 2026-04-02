@@ -13,7 +13,7 @@ See repository **[README.md](../README.md)** — `docker compose up` after `.env
 
 ## Kubernetes / Helm
 
-See **[HELM.md](HELM.md)** for chart location (`charts/dataverseup`), Secret layout, Solr ConfigMap expectations, and smoke tests.
+See **[HELM.md](HELM.md)** for chart path, **`bin/helm_deploy`**, Secret layout, Solr ConfigMap, and smoke tests.
 
 ## Learnings log
 

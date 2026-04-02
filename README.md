@@ -39,10 +39,12 @@ Notch8's **ops wrapper** around stock **[Dataverse](https://dataverse.org/)** (G
 
 ```bash
 helm lint charts/dataverseup
-helm upgrade --install dataverseup charts/dataverseup -n <namespace> -f your-values.yaml
+HELM_EXTRA_ARGS="--values ./your-values.yaml --wait" ./bin/helm_deploy <release> <namespace>
 ```
 
-Full steps, Secrets, and Solr ConfigMap expectations: **[docs/HELM.md](docs/HELM.md)**. Example values skeleton: **`charts/dataverseup/values-examples/internal-solr-starter.yaml`**.
+Wrapper: **`bin/helm_deploy`** (`--atomic`, `--create-namespace`, default **30m** timeout; extend via `HELM_EXTRA_ARGS`).
+
+Full install order, Secrets, Solr ConfigMap: **[docs/HELM.md](docs/HELM.md)**.
 
 ## Layout
 
@@ -50,6 +52,7 @@ Full steps, Secrets, and Solr ConfigMap expectations: **[docs/HELM.md](docs/HELM
 |------|---------|
 | `docker-compose.yml` | Stack: Traefik, Postgres, Solr, MinIO (optional), Dataverse, bootstrap, branding |
 | `charts/dataverseup/` | **Helm chart** for Kubernetes |
+| `bin/helm_deploy` | **`helm upgrade --install`** wrapper for the chart |
 | `.env.example` | Version pins and env template — copy to `.env` |
 | `secrets.example/` | Payara/Dataverse secret files template — copy to `secrets/` |
 | `init.d/` | Payara init scripts (local storage, optional S3/MinIO when env set) |

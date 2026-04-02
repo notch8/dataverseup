@@ -6,6 +6,20 @@ This document describes how to install the **`dataverseup`** Helm chart from thi
 
 **Chart path:** `charts/dataverseup`
 
+## `bin/helm_deploy` (recommended wrapper)
+
+From the **repository root**, installs or upgrades the chart with **`--install`**, **`--atomic`**, **`--create-namespace`**, and a default **`--timeout 30m0s`** (Payara first boot is slow).
+
+```text
+./bin/helm_deploy RELEASE_NAME NAMESPACE
+```
+
+Pass extra Helm flags with **`HELM_EXTRA_ARGS`** (values file, longer timeout, etc.). If you pass a **second `--timeout`** in `HELM_EXTRA_ARGS`, it overrides the default (Helm uses the last value).
+
+```bash
+HELM_EXTRA_ARGS="--values ./your-values.yaml --wait --timeout 45m0s" ./bin/helm_deploy my-release my-namespace
+```
+
 ## What the chart deploys
 
 - **Dataverse** (`gdcc/dataverse`) — Payara on port **8080**; Service may expose **80** → target **8080** for Ingress compatibility.
@@ -36,7 +50,7 @@ The chart does **not** install PostgreSQL by default. Supply DB settings with **
    - Optional: `DATAVERSE_PID_*` for FAKE DOI (see default chart comments and [container demo docs](https://guides.dataverse.org/en/latest/container/running/demo.html))
 
 5. **Values file**  
-   Start from `charts/dataverseup/values.yaml` and override with a small file (see `charts/dataverseup/values-examples/internal-solr-starter.yaml` for a commented skeleton). At minimum for a first install:
+   Start from `charts/dataverseup/values.yaml` and override with a small values file of your own. At minimum for a first install:
 
    - `persistence.enabled: true` (file store)
    - `extraEnvFrom` pointing at your Secret
@@ -52,8 +66,16 @@ The chart does **not** install PostgreSQL by default. Supply DB settings with **
 
 7. **Install**
 
+   Using the wrapper (from repo root):
+
    ```bash
-   helm upgrade --install dataverseup charts/dataverseup -n <ns> -f your-values.yaml --wait --timeout 45m
+   HELM_EXTRA_ARGS="--values ./your-values.yaml --wait" ./bin/helm_deploy <release> <namespace>
+   ```
+
+   Raw Helm (equivalent shape):
+
+   ```bash
+   helm upgrade --install <release> charts/dataverseup -n <ns> -f your-values.yaml --wait --timeout 45m
    ```
 
 8. **Smoke tests**
@@ -66,12 +88,14 @@ The chart does **not** install PostgreSQL by default. Supply DB settings with **
 9. **Helm test** (optional)
 
    ```bash
-   helm test dataverseup -n <ns>
+   helm test <release> -n <ns>
    ```
 
 ## Ingress and TLS
 
 Set `ingress.enabled: true`, `ingress.className` to your controller (e.g. `nginx`, `traefik`), and hosts/TLS to match your DNS. Payara serves **HTTP** on 8080; the Service fronts it on port **80** so Ingress backends stay HTTP.
+
+If you terminate TLS or expose the app on a **non-default host port**, keep **`DATAVERSE_URL`** and related hostname settings aligned with the URL users and the app use.
 
 ## Payara init scripts (DRY with Compose)
 
