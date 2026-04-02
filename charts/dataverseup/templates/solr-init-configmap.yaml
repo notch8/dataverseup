@@ -1,0 +1,140 @@
+{{- if .Values.solrInit.enabled }}
+{{- $standalone := or .Values.internalSolr.enabled (eq .Values.solrInit.mode "standalone") }}
+{{- if and (not $standalone) (not .Values.solrInit.zkConnect) }}{{ fail "solrInit.zkConnect is required when solrInit.mode is cloud and internalSolr.enabled is false" }}{{- end }}
+{{- if not .Values.solrInit.confConfigMap }}{{ fail "solrInit.confConfigMap is required when solrInit.enabled (ConfigMap with Dataverse solr conf files)" }}{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dataverseup.fullname" . }}-solr-init-script
+  labels:
+    {{- include "dataverseup.labels" . | nindent 4 }}
+data:
+  solr-init.sh: |
+    #!/bin/bash
+    set -euo pipefail
+    MODE="${SOLR_INIT_MODE:-cloud}"
+    if [[ "${MODE}" == "standalone" ]]; then
+      COLLECTION="${SOLR_COLLECTION:-dataverse}"
+      BASE="${SOLR_HTTP_BASE:?set solrInit.solrHttpBase}"
+      AUTH=()
+      if [[ -n "${SOLR_ADMIN_USER:-}" && -n "${SOLR_ADMIN_PASSWORD:-}" ]]; then
+        AUTH=(-u "${SOLR_ADMIN_USER}:${SOLR_ADMIN_PASSWORD}")
+      fi
+      echo "solr-init: standalone — waiting for Solr at ${BASE} (core ${COLLECTION}) ..."
+      for _ in $(seq 1 120); do
+        if curl -sfS "${AUTH[@]}" "${BASE}/solr/${COLLECTION}/admin/ping" >/dev/null 2>&1; then
+          echo "solr-init: core ${COLLECTION} is reachable"
+          exit 0
+        fi
+        sleep 2
+      done
+      echo "solr-init: timeout waiting for Solr core ping" >&2
+      exit 1
+    fi
+    # SolrCloud: upload Dataverse configset to ZK, then create collection if missing.
+    SOLR_BIN="${SOLR_BIN:-/opt/bitnami/solr/bin/solr}"
+    ZK="${SOLR_ZK_CONNECT:?set solrInit.zkConnect}"
+    CONF_DIR="${SOLR_CONF_DIR:-/solr-conf}"
+    COLLECTION="${SOLR_COLLECTION:-dataverse}"
+    CONFIGSET="${SOLR_CONFIGSET_NAME:-dataverse_config}"
+    BASE="${SOLR_HTTP_BASE:?set solrInit.solrHttpBase}"
+    SHARDS="${SOLR_NUM_SHARDS:-1}"
+    RF="${SOLR_REPLICATION_FACTOR:-2}"
+
+    AUTH=()
+    if [[ -n "${SOLR_ADMIN_USER:-}" && -n "${SOLR_ADMIN_PASSWORD:-}" ]]; then
+      AUTH=(-u "${SOLR_ADMIN_USER}:${SOLR_ADMIN_PASSWORD}")
+    fi
+
+    echo "solr-init: waiting for Solr admin at ${BASE} ..."
+    for _ in $(seq 1 90); do
+      if curl -sfS "${AUTH[@]}" "${BASE}/solr/admin/info/system" >/dev/null 2>&1; then
+        echo "solr-init: Solr is up"
+        break
+      fi
+      sleep 2
+    done
+    if ! curl -sfS "${AUTH[@]}" "${BASE}/solr/admin/info/system" >/dev/null 2>&1; then
+      echo "solr-init: timeout waiting for Solr" >&2
+      exit 1
+    fi
+
+    # zk upconfig -d does not reliably use the mounted ConfigMap path; stage to /tmp first.
+    # Do not stage under $SOLR_HOME/server/solr/configsets (not writable when runAsNonRoot uid 1001).
+    # ConfigMap ships solr-conf.tgz (kubectl --from-file=DIR omits subdirs like lang/).
+    STAGING="/tmp/dataverse_zk_conf"
+    rm -rf "${STAGING}"
+    mkdir -p "${STAGING}"
+    if [[ -f "${CONF_DIR}/solr-conf.tgz" ]]; then
+      echo "solr-init: extracting solr-conf.tgz into ${STAGING}"
+      tar --warning=no-unknown-keyword -xzf "${CONF_DIR}/solr-conf.tgz" -C "${STAGING}" || tar xzf "${CONF_DIR}/solr-conf.tgz" -C "${STAGING}"
+    else
+      echo "solr-init: no solr-conf.tgz under ${CONF_DIR} — ConfigMap is still the old flat layout (kubectl --from-file=dir omits lang/)." >&2
+      echo "solr-init: listing mount (expect solr-conf.tgz or full flat conf from a ConfigMap per Dataverse Solr guide):" >&2
+      ls -la "${CONF_DIR}" >&2 || true
+      POD_NS=""
+      if [[ -r /var/run/secrets/kubernetes.io/serviceaccount/namespace ]]; then
+        POD_NS=$(tr -d '\n' < /var/run/secrets/kubernetes.io/serviceaccount/namespace)
+        echo "solr-init: fix: rebuild ConfigMap from full Solr conf directory for your Dataverse version (see docs/HELM.md)." >&2
+      else
+        echo "solr-init: fix: rebuild ConfigMap from full Solr conf directory (namespace in kubectl context)." >&2
+      fi
+      cp -aL "${CONF_DIR}/." "${STAGING}/"
+    fi
+    UPLOAD_DIR=""
+    if [[ -f "${STAGING}/solrconfig.xml" ]]; then
+      UPLOAD_DIR="${STAGING}"
+    elif [[ -f "${STAGING}/conf/solrconfig.xml" ]]; then
+      UPLOAD_DIR="${STAGING}/conf"
+    else
+      echo "solr-init: missing solrconfig.xml — ConfigMap must be the full Dataverse Solr conf directory, not schema.xml only." >&2
+      echo "solr-init: See https://guides.dataverse.org/en/latest/installation/prerequisites.html#solr and docs/HELM.md" >&2
+      echo "solr-init: Example: package conf dir as solr-conf.tgz ConfigMap keys (schema.xml, solrconfig.xml, lang/, …)." >&2
+      echo "solr-init: Staged files under ${STAGING}:" >&2
+      find "${STAGING}" -type f 2>/dev/null | sort >&2 || ls -laR "${STAGING}" >&2 || true
+      exit 1
+    fi
+
+    if [[ ! -f "${UPLOAD_DIR}/stopwords.txt" ]]; then
+      echo "solr-init: missing stopwords.txt in staged conf (ConfigMap incomplete)." >&2
+      echo "solr-init: Rebuild full conf per Dataverse version; see https://guides.dataverse.org/en/latest/installation/prerequisites.html#solr" >&2
+      find "${UPLOAD_DIR}" -type f 2>/dev/null | sort | head -60 >&2 || true
+      exit 1
+    fi
+    if [[ ! -f "${UPLOAD_DIR}/lang/stopwords_en.txt" ]]; then
+      echo "solr-init: missing lang/stopwords_en.txt — ConfigMap must be solr-conf.tgz from create-solr-conf-configmap.sh (not kubectl --from-file=dir)." >&2
+      exit 1
+    fi
+
+    SOLR_HOME="$(cd "$(dirname "$SOLR_BIN")/.." && pwd)"
+    echo "solr-init: uploading configset ${CONFIGSET} to ZK ${ZK} (from ${UPLOAD_DIR})"
+    (cd "${SOLR_HOME}" && "$SOLR_BIN" zk upconfig -z "${ZK}" -n "${CONFIGSET}" -d "${UPLOAD_DIR}")
+
+    echo "solr-init: checking collection ${COLLECTION}"
+    LIST_JSON=$(curl -sfS "${AUTH[@]}" "${BASE}/solr/admin/collections?action=LIST")
+    if echo "${LIST_JSON}" | grep -q "\"${COLLECTION}\""; then
+      echo "solr-init: collection ${COLLECTION} already exists"
+      exit 0
+    fi
+
+    echo "solr-init: creating collection ${COLLECTION} (shards=${SHARDS} replicas=${RF})"
+    CREATE_URL="${BASE}/solr/admin/collections?action=CREATE&name=${COLLECTION}&collection.configName=${CONFIGSET}&numShards=${SHARDS}&replicationFactor=${RF}&wt=json"
+    CREATE_BODY="${TMPDIR:-/tmp}/solr-init-create-body.json"
+    HTTP_CODE=$(curl -sS "${AUTH[@]}" -o "${CREATE_BODY}" -w "%{http_code}" "${CREATE_URL}") || true
+    if [[ "${HTTP_CODE}" != "200" ]]; then
+      echo "solr-init: collection CREATE failed HTTP ${HTTP_CODE}" >&2
+      echo "solr-init: Solr response:" >&2
+      cat "${CREATE_BODY}" >&2 2>/dev/null || true
+      echo "solr-init: If you see unknown configset / ZK mismatch, ensure zkConnect matches Solr (often append /solr chroot for Bitnami)." >&2
+      exit 1
+    fi
+    if command -v jq >/dev/null 2>&1; then
+      STATUS=$(jq -r '.responseHeader.status // empty' "${CREATE_BODY}" 2>/dev/null || true)
+      if [[ -n "${STATUS}" && "${STATUS}" != "0" ]]; then
+        echo "solr-init: collection CREATE returned non-zero status in JSON" >&2
+        cat "${CREATE_BODY}" >&2
+        exit 1
+      fi
+    fi
+    echo "solr-init: done"
+{{- end }}

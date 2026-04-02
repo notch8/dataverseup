@@ -27,7 +27,7 @@ Notch8's **ops wrapper** around stock **[Dataverse](https://dataverse.org/)** (G
 5. **URLs (defaults in `.env.example`):**
    - Dataverse (Traefik): `http://localhost/`
    - Direct Payara: `http://localhost:8080/`
-   - Bootstrap admin (after `dev_bootstrap` succeeds): **`dataverseAdmin`** / **`admin1`** (change before any shared or AWS host; see `docs/DEPLOYMENT.md`)
+   - Bootstrap admin (after `dev_bootstrap` succeeds): **`dataverseAdmin`** / **`admin1`**
 
 6. **Branding (optional):** After creating a **superuser API token** in the UI, put it on one line in `secrets/api/key`, then:
    ```bash
@@ -35,18 +35,29 @@ Notch8's **ops wrapper** around stock **[Dataverse](https://dataverse.org/)** (G
    ```
    Or: `./scripts/dev-up.sh` (brings stack up and re-runs branding).
 
+## Kubernetes (Helm)
+
+```bash
+helm lint charts/dataverseup
+helm upgrade --install dataverseup charts/dataverseup -n <namespace> -f your-values.yaml
+```
+
+Full steps, Secrets, and Solr ConfigMap expectations: **[docs/HELM.md](docs/HELM.md)**. Example values skeleton: **`charts/dataverseup/values-examples/internal-solr-starter.yaml`**.
+
 ## Layout
 
 | Path | Purpose |
 |------|---------|
 | `docker-compose.yml` | Stack: Traefik, Postgres, Solr, MinIO (optional), Dataverse, bootstrap, branding |
+| `charts/dataverseup/` | **Helm chart** for Kubernetes |
 | `.env.example` | Version pins and env template — copy to `.env` |
 | `secrets.example/` | Payara/Dataverse secret files template — copy to `secrets/` |
 | `init.d/` | Payara init scripts (local storage, optional S3/MinIO when env set) |
 | `config/schema.xml` | Solr schema bind-mount (see upstream Solr notes) |
 | `branding/` | Installation branding + static assets |
 | `scripts/` | Helpers (`apply-branding.sh`, `dev-up.sh`) |
-| `docs/DEPLOYMENT.md` | **Working deployment notes + learnings** |
+| `docs/HELM.md` | **Helm install / smoke tests / learnings** |
+| `docs/DEPLOYMENT.md` | **Working deployment notes (Compose + AWS context)** |
 
 ## Version pin
 

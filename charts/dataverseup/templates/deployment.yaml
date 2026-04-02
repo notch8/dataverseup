@@ -1,0 +1,223 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dataverseup.fullname" . }}
+  labels:
+    {{- include "dataverseup.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "dataverseup.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "dataverseup.labels" . | nindent 8 }}
+        app.kubernetes.io/component: primary
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "dataverseup.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if or .Values.solrInit.enabled .Values.solrPreSetupInitContainer }}
+      initContainers:
+        {{- with .Values.solrPreSetupInitContainer }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if .Values.solrInit.enabled }}
+        {{- if and .Values.solrInit.existingSecret .Values.solrInit.adminUser }}{{ fail "solrInit: use either existingSecret or adminUser/adminPassword, not both" }}{{- end }}
+        - name: load-solr-config
+          image: "{{ .Values.solrInit.image }}"
+          imagePullPolicy: {{ .Values.solrInit.imagePullPolicy }}
+          securityContext:
+            runAsUser: 1001
+            runAsGroup: 1001
+            runAsNonRoot: true
+          command: ["/bin/bash", "/scripts/solr-init.sh"]
+          {{- if .Values.solrInit.existingSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ .Values.solrInit.existingSecret | quote }}
+          {{- end }}
+          env:
+            {{- if or .Values.internalSolr.enabled (eq .Values.solrInit.mode "standalone") }}
+            - name: SOLR_INIT_MODE
+              value: "standalone"
+            {{- end }}
+            - name: SOLR_ZK_CONNECT
+              value: {{ .Values.solrInit.zkConnect | default "" | quote }}
+            - name: SOLR_HTTP_BASE
+              value: {{ .Values.solrInit.solrHttpBase | quote }}
+            - name: SOLR_COLLECTION
+              value: {{ .Values.solrInit.collection | quote }}
+            - name: SOLR_CONFIGSET_NAME
+              value: {{ .Values.solrInit.configSetName | quote }}
+            - name: SOLR_NUM_SHARDS
+              value: {{ .Values.solrInit.numShards | toString | quote }}
+            - name: SOLR_REPLICATION_FACTOR
+              value: {{ .Values.solrInit.replicationFactor | toString | quote }}
+            - name: SOLR_CONF_DIR
+              value: "/solr-conf"
+            {{- if and (not .Values.solrInit.existingSecret) .Values.solrInit.adminUser }}
+            - name: SOLR_ADMIN_USER
+              value: {{ .Values.solrInit.adminUser | quote }}
+            - name: SOLR_ADMIN_PASSWORD
+              value: {{ .Values.solrInit.adminPassword | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: solr-init-script
+              mountPath: /scripts
+              readOnly: true
+            - name: solr-dataverse-conf
+              mountPath: /solr-conf
+              readOnly: true
+          {{- with .Values.solrInit.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.container.port }}
+              protocol: TCP
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if or .Values.extraEnvVars .Values.awsS3.enabled }}
+          env:
+            {{- if .Values.extraEnvVars }}
+            {{- toYaml .Values.extraEnvVars | nindent 12 }}
+            {{- end }}
+            {{- if .Values.awsS3.enabled }}
+            - name: aws_endpoint_url
+              value: {{ .Values.awsS3.endpointUrl | quote }}
+            - name: aws_bucket_name
+              value: {{ .Values.awsS3.bucketName | quote }}
+            - name: aws_s3_profile
+              value: {{ .Values.awsS3.profile | quote }}
+            - name: aws_s3_region
+              value: {{ .Values.awsS3.region | quote }}
+            # Force correct SigV4 region (overrides a bad `region` line in the mounted config Secret).
+            - name: AWS_REGION
+              value: {{ .Values.awsS3.region | quote }}
+            - name: AWS_DEFAULT_REGION
+              value: {{ .Values.awsS3.region | quote }}
+            # Non-root Payara user cannot write /root/.aws; SDK reads these paths (mounted Secret).
+            - name: AWS_SHARED_CREDENTIALS_FILE
+              value: /secrets/aws-cli/.aws/credentials
+            - name: AWS_CONFIG_FILE
+              value: /secrets/aws-cli/.aws/config
+            {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.volumeMounts }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+            {{- if .Values.docrootPersistence.enabled }}
+            - name: docroot
+              mountPath: {{ .Values.docrootPersistence.mountPath }}
+            {{- end }}
+            {{- if or .Values.configMap.enabled .Values.mail.enabled }}
+            - name: init-d
+              mountPath: {{ .Values.configMap.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.awsS3.enabled }}
+            - name: init-d
+              mountPath: /opt/payara/scripts/init.d/006-s3-aws-storage.sh
+              subPath: 006-s3-aws-storage.sh
+              readOnly: true
+            - name: aws-cli
+              mountPath: /secrets/aws-cli/.aws
+              readOnly: true
+            {{- end }}
+            {{- with .Values.volumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+      {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.volumes .Values.solrInit.enabled }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ if .Values.persistence.existingClaim }}{{ .Values.persistence.existingClaim }}{{ else }}{{ include "dataverseup.fullname" . }}-data{{ end }}
+        {{- end }}
+        {{- if .Values.docrootPersistence.enabled }}
+        - name: docroot
+          persistentVolumeClaim:
+            claimName: {{ if .Values.docrootPersistence.existingClaim }}{{ .Values.docrootPersistence.existingClaim }}{{ else }}{{ include "dataverseup.fullname" . }}-docroot{{ end }}
+        {{- end }}
+        {{- if or .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled }}
+        - name: init-d
+          configMap:
+            name: {{ include "dataverseup.fullname" . }}-config
+            defaultMode: 0755
+        {{- end }}
+        {{- if .Values.awsS3.enabled }}
+        - name: aws-cli
+          secret:
+            secretName: {{ required "awsS3.existingSecret is required when awsS3.enabled=true" .Values.awsS3.existingSecret | quote }}
+            items:
+              - key: {{ .Values.awsS3.secretKeys.credentials | quote }}
+                path: credentials
+              - key: {{ .Values.awsS3.secretKeys.config | quote }}
+                path: config
+        {{- end }}
+        {{- if .Values.solrInit.enabled }}
+        - name: solr-init-script
+          configMap:
+            name: {{ include "dataverseup.fullname" . }}-solr-init-script
+            defaultMode: 0555
+        - name: solr-dataverse-conf
+          configMap:
+            name: {{ .Values.solrInit.confConfigMap | quote }}
+            defaultMode: 0444
+        {{- end }}
+        {{- with .Values.volumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
