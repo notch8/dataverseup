@@ -1,0 +1,15 @@
+.env
+secrets/*
+!secrets/.gitkeep
+
+ops/besties-deploy.yaml
+.aws-dataverse-s3/
+dv-solr-conf/
+letsencrypt/
+database-data/
+docker-dev-volumes/
+minio-data/
+data/
+/docroot/
+*.war
+.idea/
