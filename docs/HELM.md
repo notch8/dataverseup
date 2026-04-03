@@ -125,8 +125,44 @@ The chart embeds the S3 and mail relay scripts from **`init.d/`** at the repo ro
 
 ## S3 file storage
 
-1. Create a Secret in the release namespace with keys matching `awsS3.secretKeys` (default: `credentials`, `config`) — same shape as AWS CLI config files.
-2. Set `awsS3.enabled: true`, `awsS3.existingSecret`, `bucketName`, `endpointUrl`, `region`, `profile`.
+1. Set `awsS3.enabled: true`, `awsS3.existingSecret`, `bucketName`, `endpointUrl`, `region`, and `profile` in values. The IAM principal behind the Secret needs S3 access to that bucket.
+
+2. Create a **generic** Secret in the **same namespace** as the Helm release, **before** pods that mount it start. Key names must match `awsS3.secretKeys` (defaults below): the values are the **raw file contents** of `~/.aws/credentials` and `~/.aws/config`.
+
+   - `credentials` — ini format; the profile block header (e.g. `[default]` or `[my-profile]`) must match **`awsS3.profile`**.
+   - `config` — ini format; for `profile: default` use `[default]` with `region = ...`. For a named profile use `[profile my-profile]` and the same region as `awsS3.region` unless you know you need otherwise.
+
+3. **Examples** (replace `NAMESPACE`, keys, region, and secret name if you changed `existingSecret`):
+
+   ```sh
+   NS=NAMESPACE
+   kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+
+   kubectl -n "$NS" create secret generic aws-s3-credentials \
+     --from-file=credentials="$HOME/.aws/credentials" \
+     --from-file=config="$HOME/.aws/config" \
+     --dry-run=client -o yaml | kubectl apply -f -
+   ```
+
+   Inline `[default]` user (no local files):
+
+   ```sh
+   kubectl -n "$NS" create secret generic aws-s3-credentials \
+     --from-literal=credentials="[default]
+   aws_access_key_id = AKIA...
+   aws_secret_access_key = ...
+   " \
+     --from-literal=config="[default]
+   region = us-west-2
+   " \
+     --dry-run=client -o yaml | kubectl apply -f -
+   ```
+
+   If you use **temporary credentials** (assumed role / STS), add a line to the credentials profile: `aws_session_token = ...`. Rotate before expiry or automate renewal.
+
+4. After creating or updating the Secret, **restart** the Dataverse Deployment (or delete its pods) so the volume is remounted. The chart sets `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE` to the mounted paths.
+
+**Note:** The Java AWS SDK inside the app may not perform the same **assume-role chaining** as the AWS CLI from a complex `config` file. Prefer putting **direct** user keys or **already-assumed** temporary keys in the Secret for the app, or use EKS **IRSA** (service account + role) instead of long-lived keys if your platform supports it.
 
 ## Upgrades
 

@@ -104,6 +104,15 @@ jobs:
           ENVSUBST_VARS='$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $SMTP_PASSWORD $SMTP_AUTH'
           envsubst "$ENVSUBST_VARS" <"$TMPL" >"$OUT"
 
+      - name: Solr conf ConfigMap (pre-Helm)
+        env:
+          DV_REF: ${{ vars.DV_REF || 'v6.10.1' }}
+          SOLR_DIST_VERSION: ${{ vars.SOLR_DIST_VERSION || '9.10.1' }}
+        run: |
+          set -e
+          chmod +x scripts/solr-init-k8s.sh scripts/k8s/ensure-solr-conf-configmap.sh
+          SOLR_RESTART_DEPLOYMENTS=false ./scripts/solr-init-k8s.sh "$HELM_NAMESPACE" "$HELM_RELEASE_NAME"
+
       - name: Deploy with Helm
         run: |
           set -e
@@ -115,6 +124,16 @@ jobs:
           kubectl -n "$HELM_NAMESPACE" rollout status deployment \
             -l "app.kubernetes.io/instance=${HELM_RELEASE_NAME},app.kubernetes.io/name=${HELM_APP_NAME}" \
             --timeout="${DEPLOY_ROLLOUT_TIMEOUT}"
+
+      - name: Solr workloads pick up ConfigMap updates
+        if: ${{ vars.SOLR_POST_HELM_ROLLOUT == 'true' }}
+        env:
+          DV_REF: ${{ vars.DV_REF || 'v6.10.1' }}
+          SOLR_DIST_VERSION: ${{ vars.SOLR_DIST_VERSION || '9.10.1' }}
+        run: |
+          set -e
+          chmod +x scripts/solr-init-k8s.sh scripts/k8s/ensure-solr-conf-configmap.sh
+          SOLR_APPLY_CM=false ./scripts/solr-init-k8s.sh "$HELM_NAMESPACE" "$HELM_RELEASE_NAME"
 
       - name: One-shot bootstrap Job (non-hook)
         if: github.event_name == 'workflow_dispatch' && inputs.run_bootstrap_job

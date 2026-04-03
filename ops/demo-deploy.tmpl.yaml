@@ -12,10 +12,42 @@
 #
 # Before first deploy: ConfigMap **dataverse-solr-conf** must ship Solr 9 conf (full tree or solr-conf.tgz),
 # same lineage as docker-compose (IQSS conf under repo **config/** — see **docs/HELM.md**).
+#
+# With **awsS3.enabled**, create a **generic** Secret in the release namespace **before** Helm installs pods that
+# mount it. The chart mounts it as AWS CLI files under `/secrets/aws-cli/.aws/`.
+#
+#   • Secret **metadata.name** must match **awsS3.existingSecret** below (default: aws-s3-credentials).
+#   • Secret **data keys** must match **awsS3.secretKeys** (default: `credentials` and `config`) — file bodies in
+#     the same format as `~/.aws/credentials` and `~/.aws/config`.
+#   • **awsS3.profile** must match a profile stanza in those files: `[default]` in credentials, and either
+#     `[default]` or `[profile yourname]` in config (see AWS CLI docs for named profiles).
+#
+# From your laptop (kubeconfig aimed at the cluster), examples — set NS to your namespace (e.g. demo-dataverseup):
+#
+#   NS=demo-dataverseup
+#   kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+#
+#   # A) Reuse local CLI files (simplest if profiles already match awsS3.profile):
+#   kubectl -n "$NS" create secret generic aws-s3-credentials \
+#     --from-file=credentials="$HOME/.aws/credentials" \
+#     --from-file=config="$HOME/.aws/config" \
+#     --dry-run=client -o yaml | kubectl apply -f -
+#
+#   # B) Two small files (avoids multiline --from-literal quoting); region must match awsS3.region:
+#   printf '%s\n' '[default]' 'aws_access_key_id = AKIA...' 'aws_secret_access_key = ...' > /tmp/aws-credentials
+#   printf '%s\n' '[default]' 'region = us-west-2' > /tmp/aws-config
+#   kubectl -n "$NS" create secret generic aws-s3-credentials \
+#     --from-file=credentials=/tmp/aws-credentials --from-file=config=/tmp/aws-config \
+#     --dry-run=client -o yaml | kubectl apply -f && rm -f /tmp/aws-credentials /tmp/aws-config
+#
+#   # C) STS / assumed-role: add `aws_session_token = ...` under the same profile in the credentials file body.
+#
+# After creating or rotating the Secret, restart the Dataverse Deployment so the volume remounts.
+# Full detail: **docs/HELM.md** (S3 file storage).
 
 awsS3:
   enabled: true
-  # Name of a Secret you create out-of-band (keys = secretKeys below).
+  # Kubernetes Secret you create out-of-band (see comments above).
   existingSecret: "aws-s3-credentials"
   bucketName: "demo-dataverseup"
   endpointUrl: "https://s3.us-west-2.amazonaws.com"
@@ -139,7 +171,7 @@ mail:
 # see ops/kubernetes-deploy-checklist.md — DB name here must exist on the server (e.g. demo-dataverseup).
 extraEnvVars:
   - name: DATAVERSE_DB_HOST
-    value: acid-postgres-cluster-delta.postgres.svc.cluster.local
+    value: postgresql.postgres.svc.cluster.local
   - name: DATAVERSE_DB_USER
     value: "demo-dataverseup"
   - name: DATAVERSE_DB_PASSWORD
@@ -147,7 +179,7 @@ extraEnvVars:
   - name: DATAVERSE_DB_NAME
     value: "demo-dataverseup"
   - name: POSTGRES_SERVER
-    value: acid-postgres-cluster-delta.postgres.svc.cluster.local
+    value: postgresql.postgres.svc.cluster.local
   - name: POSTGRES_PORT
     value: "5432"
   - name: POSTGRES_DATABASE
