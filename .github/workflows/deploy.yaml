@@ -1,0 +1,131 @@
+# In-repo deploy: checkout → kubeconfig → envsubst → bin/helm_deploy.
+# Container image comes from chart defaults + ops/<environment>-deploy.yaml (not ghcr.io/<this repo>).
+name: Deploy
+run-name: Deploy (${{ github.ref_name }} -> ${{ inputs.environment }}) by @${{ github.actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deploy target (must match ops/<name>-deploy.tmpl.yaml and a GitHub Environment)
+        required: true
+        type: choice
+        default: besties
+        options:
+          - besties
+      debug_enabled:
+        description: Open an interactive tmate session on the runner before deploy
+        required: false
+        type: boolean
+        default: false
+      k8s_release_name:
+        description: Helm release name (leave blank for <repo>-<environment>)
+        required: false
+        type: string
+      k8s_namespace:
+        description: Kubernetes namespace (leave blank for <repo>-<environment>)
+        required: false
+        type: string
+      run_bootstrap_job:
+        description: Apply a one-shot configbaker Job (bootstrap.sh dev) — use after empty DB; deletes any prior …-bootstrap-once job first
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    container: dtzar/helm-kubectl:3.9.4
+    environment: ${{ inputs.environment }}
+    env:
+      DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+      # Optional mail — secrets + Environment variables (see ops/besties-deploy.tmpl.yaml header).
+      SYSTEM_EMAIL: ${{ secrets.SYSTEM_EMAIL }}
+      NO_REPLY_EMAIL: ${{ secrets.NO_REPLY_EMAIL }}
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      MAIL_SMTP_PASSWORD: ${{ secrets.MAIL_SMTP_PASSWORD }}
+      SMTP_ADDRESS: ${{ vars.SMTP_ADDRESS }}
+      SMTP_USER_NAME: ${{ vars.SMTP_USER_NAME }}
+      SMTP_PORT: ${{ vars.SMTP_PORT }}
+      SOCKET_PORT: ${{ vars.SOCKET_PORT }}
+      SMTP_AUTH: ${{ vars.SMTP_AUTH }}
+      SMTP_STARTTLS: ${{ vars.SMTP_STARTTLS }}
+      SMTP_TYPE: ${{ vars.SMTP_TYPE }}
+      SMTP_ENABLED: ${{ vars.SMTP_ENABLED }}
+      SMTP_DOMAIN: ${{ vars.SMTP_DOMAIN }}
+      # Bumped every workflow run so the Deployment pod template changes and Kubernetes rolls pods even when
+      # image.tag and the rest of values are identical (otherwise `helm upgrade` can "succeed" with no rollout).
+      GITHUB_RUN_ID: ${{ github.run_id }}
+      HELM_EXPERIMENTAL_OCI: 1
+      HELM_EXTRA_ARGS: --values ops/${{ inputs.environment }}-deploy.yaml
+      KUBECONFIG: ./kubeconfig.yml
+      KUBECONFIG_FILE: ${{ secrets.KUBECONFIG_FILE }}
+    steps:
+      # Local actions under ./.github/actions/* are not on disk until checkout runs — checkout must be first.
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: github.event_name == 'workflow_dispatch' && inputs.debug_enabled
+        with:
+          limit-access-to-actor: true
+
+      - name: Deploy with Helm
+        run: |
+          set -e
+          echo "$KUBECONFIG_FILE" | base64 -d > "$KUBECONFIG"
+          export SMTP_PORT="${SMTP_PORT:-25}"
+          export SOCKET_PORT="${SOCKET_PORT:-${SMTP_PORT}}"
+          export SMTP_PASSWORD="${SMTP_PASSWORD:-${MAIL_SMTP_PASSWORD:-}}"
+          if [ -z "${NO_REPLY_EMAIL:-}" ] && [ -n "${SMTP_DOMAIN:-}" ]; then
+            export NO_REPLY_EMAIL="noreply@${SMTP_DOMAIN}"
+          fi
+          DOLLAR=$ envsubst < "ops/${{ inputs.environment }}-deploy.tmpl.yaml" > "ops/${{ inputs.environment }}-deploy.yaml"
+          REL='${{ inputs.k8s_release_name }}'
+          NS='${{ inputs.k8s_namespace }}'
+          if [ -z "$REL" ]; then REL="${{ github.event.repository.name }}-${{ inputs.environment }}"; fi
+          if [ -z "$NS" ]; then NS="${{ github.event.repository.name }}-${{ inputs.environment }}"; fi
+          chmod +x bin/helm_deploy
+          ./bin/helm_deploy "$REL" "$NS"
+          echo "=== helm status ==="
+          helm status "$REL" -n "$NS"
+          echo "=== rollout (Dataverse deployment) ==="
+          kubectl -n "$NS" rollout status deployment \
+            -l "app.kubernetes.io/instance=${REL},app.kubernetes.io/name=demo-dataverse" \
+            --timeout=10m
+
+      - name: One-shot configbaker bootstrap Job
+        if: github.event_name == 'workflow_dispatch' && inputs.run_bootstrap_job
+        run: |
+          set -e
+          echo "$KUBECONFIG_FILE" | base64 -d > "$KUBECONFIG"
+          export SMTP_PORT="${SMTP_PORT:-25}"
+          export SOCKET_PORT="${SOCKET_PORT:-${SMTP_PORT}}"
+          export SMTP_PASSWORD="${SMTP_PASSWORD:-${MAIL_SMTP_PASSWORD:-}}"
+          if [ -z "${NO_REPLY_EMAIL:-}" ] && [ -n "${SMTP_DOMAIN:-}" ]; then
+            export NO_REPLY_EMAIL="noreply@${SMTP_DOMAIN}"
+          fi
+          DOLLAR=$ envsubst < "ops/${{ inputs.environment }}-deploy.tmpl.yaml" > "ops/${{ inputs.environment }}-deploy.yaml"
+          REL='${{ inputs.k8s_release_name }}'
+          NS='${{ inputs.k8s_namespace }}'
+          if [ -z "$REL" ]; then REL="${{ github.event.repository.name }}-${{ inputs.environment }}"; fi
+          if [ -z "$NS" ]; then NS="${{ github.event.repository.name }}-${{ inputs.environment }}"; fi
+          JOB="${REL}-bootstrap-once"
+          kubectl -n "$NS" delete job "$JOB" --ignore-not-found=true
+          helm template "$REL" ./charts/demo-dataverse \
+            --namespace "$NS" \
+            $HELM_EXTRA_ARGS \
+            --show-only templates/bootstrap-job.yaml \
+            --set bootstrapJob.enabled=true \
+            --set bootstrapJob.helmHook=false \
+            | kubectl apply -f -
+          kubectl -n "$NS" wait --for=condition=complete "job/$JOB" --timeout=25m
+          kubectl -n "$NS" logs "job/$JOB"
