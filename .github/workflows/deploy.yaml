@@ -10,9 +10,9 @@ on:
         description: Deploy target (must match ops/<name>-deploy.tmpl.yaml and a GitHub Environment)
         required: true
         type: choice
-        default: besties
+        default: friends
         options:
-          - besties
+          - friends
       debug_enabled:
         description: Open an interactive tmate session on the runner before deploy
         required: false
@@ -42,7 +42,7 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      # Optional mail — secrets + Environment variables (see ops/besties-deploy.tmpl.yaml header).
+      # Optional mail — secrets + Environment variables (see ops/friends-deploy.tmpl.yaml header).
       SYSTEM_EMAIL: ${{ secrets.SYSTEM_EMAIL }}
       NO_REPLY_EMAIL: ${{ secrets.NO_REPLY_EMAIL }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
