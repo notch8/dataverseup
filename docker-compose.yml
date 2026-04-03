@@ -1,13 +1,3 @@
-# See README.md ("Docker Compose stack").
-#
-# Workflow (run from repo root):
-#   docker compose up -d
-#   docker compose run --rm dev_branding
-#
-# The first line starts the stack. On a fresh project, dev_bootstrap then dev_branding run once
-# via depends_on. Re-run the second line after you add an API token to secrets/api/key or change
-# branding/branding.env (idempotent).
-
 x-dataverseup-workflow:
   commands:
     - docker compose up -d
@@ -208,12 +198,16 @@ services:
       image: gdcc/configbaker:${VERSION}
       platform: linux/amd64
       restart: "no"
+      # Persist API_TOKEN to secrets/api/bootstrap.env (mounted script avoids inline YAML/command quirks).
       command:
-        - bootstrap.sh
-        - dev
+        - /bin/bash
+        - /bootstrap-entrypoint.sh
       environment:
         - DATAVERSE_URL=http://dataverse:8080
         - TIMEOUT=20m
+      volumes:
+        - ${CONFIGURATION_PATH}/secrets:/secrets
+        - ./scripts/dev-bootstrap-entrypoint.sh:/bootstrap-entrypoint.sh:ro
       depends_on:
         dataverse:
           condition: service_healthy
@@ -224,14 +218,15 @@ services:
       <<: *env-from-file
       image: curlimages/curl:8.6.0
       restart: "no"
-      entrypoint: ["/bin/sh", "/scripts/apply-branding.sh"]
+      entrypoint: ["/bin/sh", "/scripts/dev-branding-entrypoint.sh"]
       environment:
         DATAVERSE_INTERNAL_URL: http://dataverse:8080
         BRANDING_ENV_PATH: /branding/branding.env
       volumes:
+        - ./scripts/dev-branding-entrypoint.sh:/scripts/dev-branding-entrypoint.sh:ro
         - ./scripts/apply-branding.sh:/scripts/apply-branding.sh:ro
         - ./branding:/branding:ro
-        - ${CONFIGURATION_PATH}/secrets:/secrets:ro
+        - ${CONFIGURATION_PATH}/secrets:/secrets
       depends_on:
         dev_bootstrap:
           condition: service_completed_successfully

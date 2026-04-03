@@ -1,1 +1,1 @@
-# After bootstrap: paste superuser API token here (single line).
+# Superuser API token (single line). Usually auto-filled from api/bootstrap.env after first dev_bootstrap; see secrets.example/README.md.

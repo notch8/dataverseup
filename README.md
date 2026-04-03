@@ -16,7 +16,7 @@ This is the operational context that used to live only in compose comments; **re
   docker compose up -d
   docker compose run --rm dev_branding
   ```
-  The first line starts the stack; on a new project **`dev_bootstrap`** then an initial **`dev_branding`** run via **`depends_on`**. Run the second line again after you put an API token in **`secrets/api/key`** or edit **`branding/branding.env`** (idempotent).
+  The first line starts the stack; on a new project **`dev_bootstrap`** then an initial **`dev_branding`** run via **`depends_on`**. On **first** bootstrap, configbaker writes **`API_TOKEN`** to **`secrets/api/bootstrap.env`** and **`dev_branding`** copies it into **`secrets/api/key`** when that file is empty, so you usually do **not** create a UI token first. Re-run the second command after **`branding/branding.env`** changes (or if you removed **`api/key`** and need to re-apply branding).
 
 ## Quick start (local / lab)
 
@@ -60,7 +60,7 @@ This is the operational context that used to live only in compose comments; **re
    - **Bootstrap admin** (after `dev_bootstrap` succeeds): username **`dataverseAdmin`**, password **`admin1`** (change before any shared or AWS host; see `docs/DEPLOYMENT.md` if present).
    - **Proxy dashboard:** `https://traefik.localhost.direct/` (from Stack Car Traefik labels).
 
-8. **Branding (optional):** Log in as that admin user, open your **account** page from the user menu in the header, and create an **API token** there (the bootstrap admin is a superuser, so that token has the rights branding scripts need). Put the token on one line in **`secrets/api/key`**, then run the second command from step **5** (`docker compose run --rm dev_branding`).
+8. **Branding (optional):** After a **first-time** dev bootstrap, **`secrets/api/key`** is filled automatically from **`secrets/api/bootstrap.env`** before **`apply-branding.sh`** runs. Re-apply with the second command in step **5** when you change **`branding/branding.env`**. If the database was already bootstrapped (configbaker skips) and **`api/key`** is empty, create a token in the UI (**account** page) or put one on one line in **`secrets/api/key`** yourself.
 
 ## Layout
 
@@ -72,7 +72,7 @@ This is the operational context that used to live only in compose comments; **re
 | `init.d/` | Payara init scripts (local storage, optional S3/MinIO when env set) |
 | `config/schema.xml` | Solr schema bind-mount (see upstream Solr notes) |
 | `branding/` | Installation branding + static assets |
-| `scripts/` | Helpers (`apply-branding.sh`; invoked by `dev_branding` in compose) |
+| `scripts/` | `apply-branding.sh`, `dev-branding-entrypoint.sh` (used by `dev_branding`) |
 | `docs/DEPLOYMENT.md` | **Working deployment notes + learnings** |
 
 ## Version pin
