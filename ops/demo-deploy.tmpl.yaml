@@ -171,7 +171,7 @@ mail:
 # see ops/kubernetes-deploy-checklist.md — DB name here must exist on the server (e.g. demo-dataverseup).
 extraEnvVars:
   - name: DATAVERSE_DB_HOST
-    value: postgresql.postgres.svc.cluster.local
+    value: postgres-postgresql.postgres.svc.cluster.local
   - name: DATAVERSE_DB_USER
     value: "demo-dataverseup"
   - name: DATAVERSE_DB_PASSWORD
@@ -179,7 +179,7 @@ extraEnvVars:
   - name: DATAVERSE_DB_NAME
     value: "demo-dataverseup"
   - name: POSTGRES_SERVER
-    value: postgresql.postgres.svc.cluster.local
+    value: postgres-postgresql.postgres.svc.cluster.local
   - name: POSTGRES_PORT
     value: "5432"
   - name: POSTGRES_DATABASE
