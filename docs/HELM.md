@@ -28,6 +28,16 @@ HELM_EXTRA_ARGS="--values ./your-values.yaml --wait --timeout 45m0s" ./bin/helm_
 - **Optional dedicated Solr** (`internalSolr`) — a **new** Solr Deployment/Service in the **same release and namespace** as Dataverse (not wiring into someone else’s shared “cluster Solr”). Default **`solrInit.mode`** is **`standalone`**: the Dataverse pod waits for that Solr core before starting. Use **`solrInit.mode: cloud`** only when Dataverse talks to **SolrCloud + ZooKeeper** you operate separately.
 - **Optional S3** — `awsS3.enabled` mounts AWS credentials and ships the S3 init script.
 
+### Branding (navbar logo + Admin API settings)
+
+1. **Navbar SVG** — Enable **`brandingNavbarLogos.enabled`** so an init container copies **`branding/docroot/logos/navbar/logo.svg`** from the chart onto **`/dv/docroot/logos/navbar/logo.svg`** (needs **`docrootPersistence`** or the chart’s emptyDir docroot fallback). Match **`LOGO_CUSTOMIZATION_FILE`** in **`branding/branding.env`** to the web path (e.g. `/logos/navbar/logo.svg`).
+
+2. **Admin settings** (installation name, footer, optional custom header/footer CSS paths) — Edit **`branding/branding.env`** in the repo. The chart embeds it in the **`…-bootstrap-chain`** ConfigMap when **`bootstrapJob.mode: compose`**. The post-install Job runs **`apply-branding.sh`**, which PUTs those settings via the Dataverse Admin API using the admin token from configbaker.
+
+3. **Custom HTML/CSS files** — Add them under **`branding/docroot/branding/`** in the repo, set **`HEADER_CUSTOMIZATION_FILE`**, etc. in **`branding.env`** to **`/dv/docroot/branding/...`**, and ship those files into the pod (extra **`volumeMounts`** / **`configMap`** or bake into an image). The stock chart does not mount the whole **`branding/docroot/branding/`** tree on the main Deployment; compose only ships **`branding.env`** and the logo via **`brandingNavbarLogos`**.
+
+4. **After `helm upgrade`** — The post-install hook does **not** re-run. To re-apply branding, use **`bootstrapJob.compose.postUpgradeBrandingSeedJob`** with a Secret holding **`DATAVERSE_API_TOKEN`**, or run **`scripts/apply-branding.sh`** locally/cron with **`DATAVERSE_INTERNAL_URL`** and a token.
+
 The chart does **not** install PostgreSQL by default. Supply DB settings with **`extraEnvVars`** and/or **`extraEnvFrom`** (recommended: Kubernetes **Secret** for passwords).
 
 ### Recommended Solr layout: new instance with this deploy

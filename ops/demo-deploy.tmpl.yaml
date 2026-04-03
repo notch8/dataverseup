@@ -102,6 +102,14 @@ docrootPersistence:
   storageClassName: ""
   existingClaim: ""
 
+# Navbar logo file on disk (chart embeds **branding/docroot/logos/navbar/logo.svg**). Init copies it to
+# `/dv/docroot/logos/navbar/logo.svg` so it matches **LOGO_CUSTOMIZATION_FILE** in **branding/branding.env**
+# (API path `/logos/navbar/logo.svg`). For custom header/footer/CSS, add files under **branding/docroot/branding/**
+# in the repo, extend **branding.env** with `/dv/docroot/branding/...` paths, then rely on **bootstrapJob.mode: compose**
+# (below) to PUT those settings after configbaker — or run **scripts/apply-branding.sh** manually with an admin token.
+brandingNavbarLogos:
+  enabled: true
+
 ingress:
   enabled: true
   className: nginx-ingress
@@ -278,10 +286,17 @@ extraEnvVars:
     value: "true"
 
 # gdcc/configbaker after install (post-install hook). Same tag as image.tag above.
-# Does not run on `helm upgrade`. After the DB is bootstrapped once, you may set enabled: false to avoid
-# the hook re-running on a future `helm uninstall` + `helm install` against the same database.
-# If you wiped Postgres later, use GitHub Deploy → "Run configbaker bootstrap job" or apply a Job by hand.
+# **mode: compose** — same order as compose: configbaker → **apply-branding.sh** (reads **branding/branding.env**
+# baked into chart) → optional **seed-content** (fixtures). Does not run on plain `helm upgrade` when helmHook=true.
+# Re-apply branding after changing **branding/**: use workflow "Run bootstrap job" with hook disabled, or
+# **postUpgradeBrandingSeedJob** + admin API token Secret (see **charts/dataverseup/values.yaml**).
+# If you wiped Postgres later, use GitHub Deploy → "Run bootstrap job" or apply a Job by hand.
 bootstrapJob:
   enabled: true
+  mode: compose
   helmHook: true
   timeout: 20m
+  compose:
+    waitMaxSeconds: 900
+    waitSleepSeconds: 5
+    seed: true
