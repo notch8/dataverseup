@@ -1,0 +1,1 @@
+../../../../init.d/1002-custom-metadata.sh

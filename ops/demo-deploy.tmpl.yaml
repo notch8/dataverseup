@@ -163,6 +163,13 @@ solrInit:
   adminPassword: ""
   resources: {}
 
+# Compose mounts the full repo **init.d/** at `/opt/payara/init.d`. Enable this to ship the same `*.sh` bundle via
+# the chart ConfigMap (see **initdFromChart** in **charts/dataverseup/values.yaml**). Scripts run in lexical order;
+# **012/013-minio** expect compose MinIO (no-op or skip if you use S3 only). **1001-webhooks** needs **triggers/**
+# on disk unless you mount it separately.
+initdFromChart:
+  enabled: true
+
 # Mount init.d/010-mailrelay-set.sh (compose-compatible). Requires system_email (and related env) to do work.
 mail:
   enabled: true

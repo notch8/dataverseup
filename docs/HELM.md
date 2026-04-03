@@ -123,6 +123,8 @@ If you terminate TLS or expose the app on a **non-default host port**, keep **`D
 
 The chart embeds the S3 and mail relay scripts from **`init.d/`** at the repo root via symlinks under `charts/dataverseup/files/`. Edit **`init.d/006-s3-aws-storage.sh`** or **`init.d/010-mailrelay-set.sh`** once; both Compose mounts and Helm ConfigMaps stay aligned. `helm package` resolves symlink content into the tarball.
 
+Set **`initdFromChart.enabled: true`** in values to include **all** `files/init.d/*.sh` in the same ConfigMap (compose parity with mounting `./init.d`). Keep **`INIT_SCRIPTS_FOLDER`** (or the image default) pointed at **`/opt/payara/init.d`**. Review MinIO- and triggers-specific scripts before enabling in a cluster that does not mount those paths.
+
 ## S3 file storage
 
 1. Set `awsS3.enabled: true`, `awsS3.existingSecret`, `bucketName`, `endpointUrl`, `region`, and `profile` in values. The IAM principal behind the Secret needs S3 access to that bucket.

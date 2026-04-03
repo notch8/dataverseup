@@ -1,0 +1,1 @@
+../../../../init.d/013-minio-bucket2.sh

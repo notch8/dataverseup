@@ -1,0 +1,1 @@
+../../../../init.d/04-setdomain.sh

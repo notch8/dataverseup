@@ -182,7 +182,7 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.brandingNavbarLogos.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.volumeMounts }}
+          {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.brandingNavbarLogos.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.initdFromChart.enabled .Values.volumeMounts }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
             - name: data
@@ -195,7 +195,7 @@ spec:
             - name: branding-writable-docroot
               mountPath: /dv/docroot
             {{- end }}
-            {{- if or .Values.configMap.enabled .Values.mail.enabled }}
+            {{- if or .Values.configMap.enabled .Values.mail.enabled .Values.initdFromChart.enabled }}
             - name: init-d
               mountPath: {{ .Values.configMap.mountPath }}
               readOnly: true
@@ -213,7 +213,7 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
-      {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.brandingNavbarLogos.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.volumes .Values.solrInit.enabled }}
+      {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.brandingNavbarLogos.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.initdFromChart.enabled .Values.volumes .Values.solrInit.enabled }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
@@ -238,7 +238,7 @@ spec:
           emptyDir: {}
         {{- end }}
         {{- end }}
-        {{- if or .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled }}
+        {{- if or .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.initdFromChart.enabled }}
         - name: init-d
           configMap:
             name: {{ include "dataverseup.fullname" . }}-config

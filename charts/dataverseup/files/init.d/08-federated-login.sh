@@ -1,0 +1,1 @@
+../../../../init.d/08-federated-login.sh

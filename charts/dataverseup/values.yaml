@@ -153,6 +153,12 @@ brandingNavbarLogos:
   docrootUid: 1000
   docrootGid: 1000
 
+# Ship the repo **init.d/*.sh** bundle into the Payara ConfigMap (compose parity: ./init.d → /opt/payara/init.d).
+# When true, all scripts under charts/dataverseup/files/init.d/*.sh are included; optional configMap.data overlays.
+# Some scripts assume compose paths (MinIO, /opt/payara/triggers, etc.) — review before enabling in production.
+initdFromChart:
+  enabled: false
+
 # Optional ConfigMap created by this chart; keys become filenames under mountPath (e.g. init scripts).
 configMap:
   enabled: false
