@@ -10,7 +10,7 @@ if [ ! -s /secrets/api/key ] && [ -f /secrets/api/bootstrap.env ]; then
     umask 077
     printf '%s\n' "$API_TOKEN" > /secrets/api/key.tmp
     mv /secrets/api/key.tmp /secrets/api/key
-    echo "dev_branding: wrote /secrets/api/key from api/bootstrap.env (dev bootstrap API_TOKEN)" >&2
+    echo "dev_branding: wrote /secrets/api/key from api/bootstrap.env (admin API_TOKEN from dev bootstrap)" >&2
   fi
 fi
 

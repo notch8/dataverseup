@@ -16,7 +16,7 @@ This is the operational context that used to live only in compose comments; **re
   docker compose up -d
   docker compose run --rm dev_branding
   ```
-  The first line starts the stack; on a new project **`dev_bootstrap`** then an initial **`dev_branding`** run via **`depends_on`**. On **first** bootstrap, configbaker writes **`API_TOKEN`** to **`secrets/api/bootstrap.env`** and **`dev_branding`** copies it into **`secrets/api/key`** when that file is empty, so you usually do **not** create a UI token first. Re-run the second command after **`branding/branding.env`** changes (or if you removed **`api/key`** and need to re-apply branding).
+  The first line starts the stack; on a new project **`dev_bootstrap`** then an initial **`dev_branding`** run via **`depends_on`**. On **first** bootstrap, configbaker writes the **admin user’s** **`API_TOKEN`** to **`secrets/api/bootstrap.env`** and **`dev_branding`** copies it into **`secrets/api/key`** when that file is empty, so you usually do **not** create a token in the UI first. Re-run the second command after **`branding/branding.env`** changes (or if you removed **`api/key`** and need to re-apply branding).
 
 ## Quick start (local / lab)
 
@@ -60,7 +60,7 @@ This is the operational context that used to live only in compose comments; **re
    - **Bootstrap admin** (after `dev_bootstrap` succeeds): username **`dataverseAdmin`**, password **`admin1`** (change before any shared or AWS host; see `docs/DEPLOYMENT.md` if present).
    - **Proxy dashboard:** `https://traefik.localhost.direct/` (from Stack Car Traefik labels).
 
-8. **Branding (optional):** After a **first-time** dev bootstrap, **`secrets/api/key`** is filled automatically from **`secrets/api/bootstrap.env`** before **`apply-branding.sh`** runs. Re-apply with the second command in step **5** when you change **`branding/branding.env`**. If the database was already bootstrapped (configbaker skips) and **`api/key`** is empty, create a token in the UI (**account** page) or put one on one line in **`secrets/api/key`** yourself.
+8. **Branding (optional):** After a **first-time** dev bootstrap, **`secrets/api/key`** is filled automatically from **`secrets/api/bootstrap.env`** before **`apply-branding.sh`** runs. Re-apply with the second command in step **5** when you change **`branding/branding.env`**. If the database was already bootstrapped (configbaker skips) and **`api/key`** is empty, **log in as the admin user** (e.g. **`dataverseAdmin`**) and **create an API token** (Account → API Token), then put that value on one line in **`secrets/api/key`**—branding calls the Admin API, so the token must come from an admin-capable account.
 
 ## Layout
 
