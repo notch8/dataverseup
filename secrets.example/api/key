@@ -1,1 +1,0 @@
-# Admin user API token, single line (log in as dataverseAdmin → Account → API Token if you set this manually). Usually auto-filled from api/bootstrap.env after first dev_bootstrap; see secrets.example/README.md.

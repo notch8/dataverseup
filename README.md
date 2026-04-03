@@ -47,6 +47,8 @@ This is the operational context that used to live only in compose comments; **re
    ```
    Use the trailing `/.` and `secrets/` so files land as `secrets/admin/...`, not `secrets/secrets.example/...` (that happens if `secrets` already exists and you run `cp -r secrets.example secrets` without that pattern).
 
+   **`secrets/api/key`** must be either **empty (zero bytes)** or a **single line** containing only the admin API token. Comments or placeholder text prevent `dev_branding` from copying the token from `secrets/api/bootstrap.env` and break `apply-branding.sh`.
+
 5. **Start (compose workflow — same as `docker-compose.yml` header):**
    ```bash
    docker compose up -d
@@ -77,6 +79,7 @@ This is the operational context that used to live only in compose comments; **re
 | `.env.example` | Version pins and env template — copy to `.env` |
 | `secrets.example/` | Payara/Dataverse secret files template — copy to `secrets/` |
 | `init.d/` | Payara init scripts (local storage, optional S3/MinIO when env set) |
+| `init.d/vendor-solr/` | Vendored `update-fields.sh` / `updateSchemaMDB.sh` (IQSS release assets) for `1002-custom-metadata.sh` |
 | `config/schema.xml` | Solr schema bind-mount (see upstream Solr notes) |
 | `branding/` | Installation branding + static assets |
 | `scripts/` | `apply-branding.sh`, `dev-branding-entrypoint.sh` (used by `dev_branding`) |

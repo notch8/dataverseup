@@ -12,6 +12,6 @@ if [ "${CVM_CONFIG}" ]; then
     wget -O ${HOME_DIR}/dvinstall/data/metadatablocks/keys_config.json ${CVM_CONFIG}
     wget -O ${HOME_DIR}/dvinstall/data/metadatablocks/cvm.sql ${CVM_SQL}
     curl -H "Content-Type: application/json" -X PUT --data-binary @${HOME_DIR}/dvinstall/data/metadatablocks/keys_config.json http://localhost:8080/api/admin/settings/:CVMConf
-    psql -U dvnuser dvndb -h postgres -f ${HOME_DIR}/dvinstall/data/metadatablocks/cvm.sql
+    psql -U "${POSTGRES_USER:-dataverse}" -d "${POSTGRES_DATABASE:-dataverse}" -h "${POSTGRES_SERVER:-postgres}" -f "${HOME_DIR}/dvinstall/data/metadatablocks/cvm.sql"
 fi
 
