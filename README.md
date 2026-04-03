@@ -9,8 +9,8 @@ This is the operational context that used to live only in compose comments; **re
 - **Stack:** `docker-compose.yml` is the DataverseUp Docker Compose stack. Extra deployment notes may live in **`docs/DEPLOYMENT.md`** if that file exists in your checkout.
 - **Environment:** Compose expects a **`.env`** at the **repo root**. Copy **`.env.example`** to **`.env`** and customize (never commit real secrets).
 - **Stack Car / Hyku networking:** The file uses **`networks.default.name: stackcar`** so this project joins the same **`stackcar`** bridge as **`sc proxy up`**. The compose network key is **`default`**, which matches Stack Car’s proxy compose file so Docker/Traefik labels stay compatible across apps.
-- **Edge proxy:** Run **`sc proxy up`** **separately** for Traefik on **80/443**. This repository does **not** ship that Traefik container.
-- **Browser hostnames:** Use **`*.localhost.direct`** (e.g. `https://localhost.direct/`). Trust the development CA once per machine with **`sc proxy cert`**.
+- **Edge proxy:** Install **[Stack Car](https://rubygems.org/gems/stack_car)** (`gem install stack_car`), then run **`sc proxy cert`** and **`sc proxy up`** **separately** from this repo for Traefik on **80/443** (same pattern as **Hyku**). This repository does **not** ship that Traefik container.
+- **Browser hostnames:** Use **`*.localhost.direct`** (e.g. `https://localhost.direct/`). Public DNS points those names at `127.0.0.1`; Stack Car supplies TLS for them after **`sc proxy cert`**.
 - **Bring-up + branding workflow** (also in comments and **`x-dataverseup-workflow`** at the top of `docker-compose.yml`):
   ```bash
   docker compose up -d
@@ -20,16 +20,23 @@ This is the operational context that used to live only in compose comments; **re
 
 ## Quick start (local / lab)
 
-1. **Prerequisites:** Docker + Docker Compose v2 (`docker compose`), ~4 GB+ RAM (Payara + Solr + Postgres). On Apple Silicon, images use `linux/amd64` (emulation). **Local HTTPS** uses **[Stack Car](https://rubygems.org/gems/stack_car)** `sc proxy` (same pattern as other Notch8 apps): it runs Traefik on **80/443** with a trusted **`*.localhost.direct`** cert.
+1. **Prerequisites:** Docker + Docker Compose v2 (`docker compose`), ~4 GB+ RAM (Payara + Solr + Postgres), and **Ruby + RubyGems** for the Stack Car CLI. On Apple Silicon, images use `linux/amd64` (emulation). **Local HTTPS** uses Stack Car’s **`sc proxy`** (same pattern as **Hyku** and other Notch8 apps): Traefik on **80/443** with a trusted **`*.localhost.direct`** cert.
 
 2. **Docker network `stackcar` (same as Hyku / other Stack Car apps):** This compose file uses **`networks.default.name: stackcar`** so the project shares the **`stackcar`** bridge with **`sc proxy up`**. Compose network key is **`default`**, matching the proxy compose file, so labels stay compatible. Run **`sc proxy up`** when you want Traefik on 80/443; order relative to **`docker compose up`** is flexible. **`sc proxy down`** removes **`stackcar`** while containers still use it — recreate the stack afterward (e.g. **`docker compose down`** then **`sc proxy up`**, then **`docker compose up -d`**), or bring the proxy back up before starting containers again.
 
-3. **Stack Car proxy (TLS on 80/443):** Use the **`proxy`** subcommand — not `sc up`, which targets other projects and expects a `web` service.
+3. **Stack Car: DNS and TLS (Hyku-style):** Defaults use real hostnames under **`*.localhost.direct`** (public DNS resolves them to `127.0.0.1`) so the browser’s host matches Traefik rules and TLS works like a normal site. On macOS/Linux we recommend **[Stack Car](https://rubygems.org/gems/stack_car)** for the proxy and dev certificates—the same workflow Hyku documents.
+
+   Install the gem, trust the CA once, then start the proxy (use the **`proxy`** subcommand — not **`sc up`**, which targets other projects and expects a `web` service):
+
    ```bash
-   sc proxy cert   # once per machine: installs the localhost.direct CA (password from upstream docs)
-   sc proxy up     # Traefik on 80/443 on network stackcar
+   gem install stack_car
+   sc proxy cert   # usually once per machine; re-run when Stack Car’s cert bundle changes
+   sc proxy up     # Traefik on 80/443, Docker network stackcar
    ```
-   This repo does not ship Traefik; for **`https://localhost.direct`** the proxy must be running.
+
+   **`sc proxy cert`** typically asks for **two** passwords: the first unlocks the **wildcard certificate** archive (where to find that password is documented with Stack Car / your team’s Hyku-style setup—often the gem README or internal ops docs). The second is your **local system** password so the CA can be added to your keychain or trust store.
+
+   This repo does not ship Traefik; keep **`sc proxy up`** running while you use **`https://localhost.direct/`**.
 
 4. **Secrets (never commit real `.env` or `secrets/`):**
    ```bash
