@@ -1,7 +1,10 @@
 x-dataverseup-workflow:
   commands:
+    # One command: starts long-running services, then dev_bootstrap → dev_branding → dev_seed (depends_on order).
     - docker compose up -d
-    - docker compose run --rm dev_branding
+    # Re-apply only after changing fixtures or branding (idempotent):
+    # - docker compose run --rm dev_branding
+    # - docker compose run --rm dev_seed
 
 x-env-from-file: &env-from-file
   env_file:
@@ -28,22 +31,21 @@ services:
 
     solr:
       <<: *env-from-file
-      image: coronawhy/solr:8.9.0
+      # Official Solr 9: matches IQSS develop conf/solr/solrconfig.xml (luceneMatchVersion 9.11).
+      image: solr:9.10.1
       platform: linux/amd64
       container_name: solr
-      # Required by some Solr images for mlock/ulimits in dev; drop if your runtime allows it.
-      privileged: true
       ports:
         - "8983:8983"
       environment:
-        - "SOLR_HOST=solr"
-        - "SOLR_PORT=8983"
         - "SOLR_JAVA_MEM=-Xms1g -Xmx1g"
         - "SOLR_OPTS=-Dlog4j2.formatMsgNoLookups=true"
       volumes:
-        - solr-data:/opt/solr/server/solr/dataverse/data
-        # Schema only (see ops/solr-init-setup.md §2 for fetch + optional ./dv-solr-conf mount).
-        - ./config/schema.xml:/var/solr/data/dataverse/conf/schema.xml
+        - solr_data:/var/solr
+        - ./scripts/solr-initdb:/docker-entrypoint-initdb.d:ro
+        # Upstream IQSS files copied into the core on start (see scripts/solr-initdb/01-ensure-core.sh).
+        - ./config/schema.xml:/opt/upstream-solr-conf/schema.xml:ro
+        - ./config/solrconfig.xml:/opt/upstream-solr-conf/solrconfig.xml:ro
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.solr.rule=Host(`solr.${traefikhost}`)"
@@ -234,11 +236,39 @@ services:
         dev_bootstrap:
           condition: service_completed_successfully
 
+    # Optional manual seed: Native API creates sub-dataverse from fixtures/seed (see README).
+    # depends_on dev_branding: run only after bootstrap + branding (token + settings), and same compose network as dataverse.
+    dev_seed:
+      <<: *env-from-file
+      image: curlimages/curl:8.6.0
+      restart: "no"
+      entrypoint: ["/bin/sh", "/scripts/dev-seed-entrypoint.sh"]
+      environment:
+        DATAVERSE_INTERNAL_URL: http://dataverse:8080
+        # Fallback when the one-off run container cannot resolve `dataverse` but :8080 is published on the host.
+        DATAVERSE_INTERNAL_URL_FALLBACK: http://host.docker.internal:8080
+        SEED_FIXTURE: /fixtures/seed/demo-collection.json
+        SEED_ROOT: /fixtures/seed
+        SEED_PARENT_ALIAS: ${SEED_PARENT_ALIAS:-root}
+        SEED_WAIT_MAX_SECONDS: ${SEED_WAIT_MAX_SECONDS:-600}
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
+      networks:
+        - default
+      depends_on:
+        dev_branding:
+          condition: service_completed_successfully
+      volumes:
+        - ./scripts/dev-seed-entrypoint.sh:/scripts/dev-seed-entrypoint.sh:ro
+        - ./scripts/seed-content.sh:/scripts/seed-content.sh:ro
+        - ./fixtures/seed:/fixtures/seed:ro
+        - ${CONFIGURATION_PATH}/secrets:/secrets
+
 volumes:
   postgres_data:
-  solr-data:
   minio_data:
   dataverse_files:
+  solr_data:
 
 networks:
   default:
