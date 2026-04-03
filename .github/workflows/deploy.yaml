@@ -1,4 +1,4 @@
-# In-repo deploy: checkout → kubeconfig → envsubst → bin/helm_deploy.
+# In-repo deploy: checkout → kubeconfig → envsubst (secrets only) → bin/helm_deploy.
 # Container image comes from chart defaults + ops/<environment>-deploy.yaml (not ghcr.io/<this repo>).
 name: Deploy
 run-name: Deploy (${{ github.ref_name }} -> ${{ inputs.environment }}) by @${{ github.actor }}
@@ -10,9 +10,9 @@ on:
         description: Deploy target (must match ops/<name>-deploy.tmpl.yaml and a GitHub Environment)
         required: true
         type: choice
-        default: friends
+        default: demo
         options:
-          - friends
+          - demo
       debug_enabled:
         description: Open an interactive tmate session on the runner before deploy
         required: false
@@ -27,10 +27,10 @@ on:
         required: false
         type: string
       run_bootstrap_job:
-        description: Apply a one-shot configbaker Job (bootstrap.sh dev) — use after empty DB; deletes any prior …-bootstrap-once job first
+        description: Re-run the bootstrap Job (helmHook=false) — same manifest as chart templates/bootstrap-job.yaml; use if the post-install hook was skipped or you reset Postgres. Chart default mode is oneShot (configbaker bootstrap.sh dev). Deletes the prior Job by name first.
         required: false
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -42,7 +42,7 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      # Optional mail — secrets + Environment variables (see ops/friends-deploy.tmpl.yaml header).
+      # Optional mail — secrets + Environment variables (see ops/demo-deploy.tmpl.yaml header).
       SYSTEM_EMAIL: ${{ secrets.SYSTEM_EMAIL }}
       NO_REPLY_EMAIL: ${{ secrets.NO_REPLY_EMAIL }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
@@ -56,6 +56,13 @@ jobs:
       SMTP_TYPE: ${{ vars.SMTP_TYPE }}
       SMTP_ENABLED: ${{ vars.SMTP_ENABLED }}
       SMTP_DOMAIN: ${{ vars.SMTP_DOMAIN }}
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+      HELM_RELEASE_NAME: ${{ inputs.k8s_release_name || format('{0}-{1}', inputs.environment, github.event.repository.name) }}
+      HELM_NAMESPACE: ${{ inputs.k8s_namespace || format('{0}-{1}', inputs.environment, github.event.repository.name) }}
+      HELM_APP_NAME: ${{ vars.HELM_APP_NAME || github.event.repository.name }}
+      HELM_CHART_PATH: ${{ vars.HELM_CHART_PATH || './charts/dataverseup' }}
+      DEPLOY_ROLLOUT_TIMEOUT: ${{ vars.DEPLOY_ROLLOUT_TIMEOUT || '10m' }}
+      DEPLOY_BOOTSTRAP_JOB_TIMEOUT: ${{ vars.DEPLOY_BOOTSTRAP_JOB_TIMEOUT || '25m' }}
       # Bumped every workflow run so the Deployment pod template changes and Kubernetes rolls pods even when
       # image.tag and the rest of values are identical (otherwise `helm upgrade` can "succeed" with no rollout).
       GITHUB_RUN_ID: ${{ github.run_id }}
@@ -72,60 +79,62 @@ jobs:
           submodules: recursive
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Validate deploy template exists
+        run: test -f "ops/${DEPLOY_ENVIRONMENT}-deploy.tmpl.yaml"
+
       - name: Setup tmate session
         uses: mxschmitt/action-tmate@v3
         if: github.event_name == 'workflow_dispatch' && inputs.debug_enabled
         with:
           limit-access-to-actor: true
 
+      - name: Prepare kubeconfig and render deploy values
+        run: |
+          set -e
+          TMPL="ops/${DEPLOY_ENVIRONMENT}-deploy.tmpl.yaml"
+          OUT="ops/${DEPLOY_ENVIRONMENT}-deploy.yaml"
+          echo "$KUBECONFIG_FILE" | base64 -d >"$KUBECONFIG"
+          export SMTP_PORT="${SMTP_PORT:-25}"
+          export SOCKET_PORT="${SOCKET_PORT:-${SMTP_PORT}}"
+          export SMTP_PASSWORD="${SMTP_PASSWORD:-${MAIL_SMTP_PASSWORD:-}}"
+          if [ -z "${NO_REPLY_EMAIL:-}" ] && [ -n "${SMTP_DOMAIN:-}" ]; then
+            export NO_REPLY_EMAIL="noreply@${SMTP_DOMAIN}"
+          fi
+          # Only secrets + rollout id — hosts, Solr DNS, ingress, and bucket are literals in the *.tmpl.yaml file.
+          ENVSUBST_VARS='$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $SMTP_PASSWORD $SMTP_AUTH'
+          envsubst "$ENVSUBST_VARS" <"$TMPL" >"$OUT"
+
       - name: Deploy with Helm
         run: |
           set -e
-          echo "$KUBECONFIG_FILE" | base64 -d > "$KUBECONFIG"
-          export SMTP_PORT="${SMTP_PORT:-25}"
-          export SOCKET_PORT="${SOCKET_PORT:-${SMTP_PORT}}"
-          export SMTP_PASSWORD="${SMTP_PASSWORD:-${MAIL_SMTP_PASSWORD:-}}"
-          if [ -z "${NO_REPLY_EMAIL:-}" ] && [ -n "${SMTP_DOMAIN:-}" ]; then
-            export NO_REPLY_EMAIL="noreply@${SMTP_DOMAIN}"
-          fi
-          DOLLAR=$ envsubst < "ops/${{ inputs.environment }}-deploy.tmpl.yaml" > "ops/${{ inputs.environment }}-deploy.yaml"
-          REL='${{ inputs.k8s_release_name }}'
-          NS='${{ inputs.k8s_namespace }}'
-          if [ -z "$REL" ]; then REL="${{ github.event.repository.name }}-${{ inputs.environment }}"; fi
-          if [ -z "$NS" ]; then NS="${{ github.event.repository.name }}-${{ inputs.environment }}"; fi
           chmod +x bin/helm_deploy
-          ./bin/helm_deploy "$REL" "$NS"
+          ./bin/helm_deploy "$HELM_RELEASE_NAME" "$HELM_NAMESPACE"
           echo "=== helm status ==="
-          helm status "$REL" -n "$NS"
+          helm status "$HELM_RELEASE_NAME" -n "$HELM_NAMESPACE"
           echo "=== rollout (Dataverse deployment) ==="
-          kubectl -n "$NS" rollout status deployment \
-            -l "app.kubernetes.io/instance=${REL},app.kubernetes.io/name=demo-dataverse" \
-            --timeout=10m
+          kubectl -n "$HELM_NAMESPACE" rollout status deployment \
+            -l "app.kubernetes.io/instance=${HELM_RELEASE_NAME},app.kubernetes.io/name=${HELM_APP_NAME}" \
+            --timeout="${DEPLOY_ROLLOUT_TIMEOUT}"
 
-      - name: One-shot configbaker bootstrap Job
+      - name: One-shot bootstrap Job (non-hook)
         if: github.event_name == 'workflow_dispatch' && inputs.run_bootstrap_job
         run: |
           set -e
-          echo "$KUBECONFIG_FILE" | base64 -d > "$KUBECONFIG"
-          export SMTP_PORT="${SMTP_PORT:-25}"
-          export SOCKET_PORT="${SOCKET_PORT:-${SMTP_PORT}}"
-          export SMTP_PASSWORD="${SMTP_PASSWORD:-${MAIL_SMTP_PASSWORD:-}}"
-          if [ -z "${NO_REPLY_EMAIL:-}" ] && [ -n "${SMTP_DOMAIN:-}" ]; then
-            export NO_REPLY_EMAIL="noreply@${SMTP_DOMAIN}"
-          fi
-          DOLLAR=$ envsubst < "ops/${{ inputs.environment }}-deploy.tmpl.yaml" > "ops/${{ inputs.environment }}-deploy.yaml"
-          REL='${{ inputs.k8s_release_name }}'
-          NS='${{ inputs.k8s_namespace }}'
-          if [ -z "$REL" ]; then REL="${{ github.event.repository.name }}-${{ inputs.environment }}"; fi
-          if [ -z "$NS" ]; then NS="${{ github.event.repository.name }}-${{ inputs.environment }}"; fi
-          JOB="${REL}-bootstrap-once"
-          kubectl -n "$NS" delete job "$JOB" --ignore-not-found=true
-          helm template "$REL" ./charts/demo-dataverse \
-            --namespace "$NS" \
+          OUT="$(mktemp)"
+          trap 'rm -f "$OUT"' EXIT
+          helm template "$HELM_RELEASE_NAME" "$HELM_CHART_PATH" \
+            --namespace "$HELM_NAMESPACE" \
             $HELM_EXTRA_ARGS \
             --show-only templates/bootstrap-job.yaml \
             --set bootstrapJob.enabled=true \
             --set bootstrapJob.helmHook=false \
-            | kubectl apply -f -
-          kubectl -n "$NS" wait --for=condition=complete "job/$JOB" --timeout=25m
-          kubectl -n "$NS" logs "job/$JOB"
+            >"$OUT"
+          JOB="$(awk '/^kind: Job$/{j=1} j && /^  name: /{print $2; exit}' "$OUT")"
+          if [ -z "$JOB" ]; then
+            echo "Could not parse Job metadata.name from helm template ($HELM_CHART_PATH templates/bootstrap-job.yaml)." >&2
+            exit 1
+          fi
+          kubectl -n "$HELM_NAMESPACE" delete job "$JOB" --ignore-not-found=true
+          kubectl apply -f "$OUT"
+          kubectl -n "$HELM_NAMESPACE" wait --for=condition=complete "job/$JOB" --timeout="${DEPLOY_BOOTSTRAP_JOB_TIMEOUT}"
+          kubectl -n "$HELM_NAMESPACE" logs "job/$JOB"

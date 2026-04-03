@@ -1,29 +1,23 @@
-# Helm values for the "besties" GitHub Environment (staging / shared demo).
+# Helm values for the "demo" GitHub Environment (staging / shared demo).
 #
-# This file uses envsubst: every $VAR below must be exported (or use ../ops/render-besties-deploy.sh).
-# Required:
-#   export DB_PASSWORD='...'              # Postgres (DATAVERSE_DB_* / POSTGRES_* / PGPASSWORD)
-#   export DOLLAR='$'                     # Keeps literal $ for any $-prefixed YAML if needed later
-# Optional CI:
-#   export GITHUB_RUN_ID='...'            # pod rollout nonce (Actions sets this automatically)
-# Mail: non-secret SMTP_* + script envs are literal in extraEnvVars below (SendGrid / besties).
-# Secrets via envsubst: SMTP_PASSWORD, SYSTEM_EMAIL; optional SMTP_AUTH (empty = rely on SMTP_TYPE=plain).
-# Legacy MAIL_SMTP_PASSWORD is merged into SMTP_PASSWORD in the deploy workflow if SMTP_PASSWORD is unset.
-# Then:
-#   envsubst < ops/besties-deploy.tmpl.yaml > ops/besties-deploy.yaml
+# **Edit literals in this file** for your environment: public hostname (ingress + dataverse_siteUrl), in-cluster
+# Solr/Dataverse Service DNS (solrHttpBase + SOLR_* / DATAVERSE_URL), S3 bucket, Postgres identifiers, etc.
+# They must stay consistent with your Helm **release name** and **namespace** (e.g. both `demo-dataverseup`).
 #
-# Besties uses in-chart **standalone Solr** (no ZooKeeper, no HTTP auth) in the **same namespace** as Dataverse.
-# Service DNS (default release/namespace `demo-dataverse-besties`): `…-solr.<ns>.svc.cluster.local:8983`.
-# If you change `k8s_release_name` / `k8s_namespace` in Deploy, edit **internalSolr** is automatic; edit
-# **solrInit.solrHttpBase** and **DATAVERSE_SOLR_*** / **SOLR_*** host strings below to match `<release>-solr.<ns>`.
+# **envsubst** (CI: see `.github/workflows/deploy.yaml`) only injects secrets and the rollout nonce — not URLs:
+#   $DB_PASSWORD, $SYSTEM_EMAIL, $SMTP_PASSWORD, $SMTP_AUTH, ${GITHUB_RUN_ID}
+# Local render:
+#   export DB_PASSWORD=... GITHUB_RUN_ID=manual-1 SYSTEM_EMAIL=... SMTP_PASSWORD=... SMTP_AUTH=
+#   envsubst '$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $SMTP_PASSWORD $SMTP_AUTH' < ops/demo-deploy.tmpl.yaml > ops/demo-deploy.yaml
 #
-# Before first deploy: ConfigMap **dataverse-besties-solr-conf** — see ops/solr-init-setup.md .
+# Before first deploy: ConfigMap **dataverse-solr-conf** must ship Solr 9 conf (full tree or solr-conf.tgz),
+# same lineage as docker-compose (IQSS conf under repo **config/** — see **docs/HELM.md**).
 
 awsS3:
   enabled: true
   # Name of a Secret you create out-of-band (keys = secretKeys below).
   existingSecret: "aws-s3-credentials"
-  bucketName: "demo-dataverse"
+  bucketName: "demo-dataverseup"
   endpointUrl: "https://s3.us-west-2.amazonaws.com"
   region: us-west-2
   # Must match the profile section in mounted .aws/credentials (e.g. [default]); override in values if needed.
@@ -83,25 +77,27 @@ ingress:
     nginx.org/client-max-body-size: "0"
     cert-manager.io/cluster-issuer: letsencrypt-production-dns
   hosts:
-    - host: demo-dataverse.notch8.cloud
+    - host: "demo-dataverseup.notch8.cloud"
       paths:
         - path: /
           pathType: Prefix
-    - host: "*.demo-dataverse.notch8.cloud"
+    - host: "*.demo-dataverseup.notch8.cloud"
       paths:
         - path: /
           pathType: Prefix
   tls:
     - hosts:
-        - demo-dataverse.notch8.cloud
-        - "*.demo-dataverse.notch8.cloud"
-      secretName: demo-dataverse-tls
+        - "demo-dataverseup.notch8.cloud"
+        - "*.demo-dataverseup.notch8.cloud"
+      secretName: "demo-dataverseup-tls"
 
-# Standalone Solr in this release (official solr:8.11.2, core "dataverse", no ZK / no HTTP basic auth).
+# Standalone Solr — **solr:9.10.1** matches **docker-compose.yml** and **charts/dataverseup/values.yaml** (IQSS Solr 9 conf).
 internalSolr:
   enabled: true
-  image: solr:8.11.2
+  image: solr:9.10.1
   imagePullPolicy: IfNotPresent
+  podSecurityContext:
+    fsGroup: 8983
   # RWO matches GDCC: standalone Solr index — "ReadWriteOnce ... sufficient" (not SolrCloud yet).
   # https://k8s-docs.gdcc.io/en/latest/day1/storage.html#index-server
   persistence:
@@ -111,19 +107,25 @@ internalSolr:
   resources: {}
 
 # Wait for in-cluster Solr core ping before Payara (standalone). For external SolrCloud, set internalSolr.enabled: false,
-# mode: cloud, zkConnect, solrHttpBase, and replicationFactor — see charts/demo-dataverse/values.yaml.
+# mode: cloud, zkConnect, solrHttpBase, and replicationFactor — see charts/dataverseup/values.yaml.
 solrInit:
   enabled: true
   mode: standalone
-  image: bitnamilegacy/solr:8.11.2-debian-11-r50
+  image: solr:9.10.1
   imagePullPolicy: IfNotPresent
+  solrBin: /opt/solr/bin/solr
+  securityContext:
+    runAsUser: 8983
+    runAsGroup: 8983
+    runAsNonRoot: true
   zkConnect: ""
-  solrHttpBase: "http://demo-dataverse-besties-solr.demo-dataverse-besties.svc.cluster.local:8983"
+  # Must match in-cluster Solr Service DNS for this release/namespace (edit if your Helm release or ns differs).
+  solrHttpBase: "http://demo-dataverseup-solr.demo-dataverseup.svc.cluster.local:8983"
   collection: dataverse
   configSetName: dataverse_config
   numShards: 1
   replicationFactor: 1
-  confConfigMap: dataverse-besties-solr-conf
+  confConfigMap: dataverse-solr-conf
   existingSecret: ""
   adminUser: ""
   adminPassword: ""
@@ -134,43 +136,43 @@ mail:
   enabled: true
 
 # Payara/Dataverse — external Postgres + Solr. Create DB + role on the server first (quoted names if hyphenated);
-# see ops/kubernetes-deploy-checklist.md — error "database \"demo-dataverse\" does not exist" means DB not created.
+# see ops/kubernetes-deploy-checklist.md — DB name here must exist on the server (e.g. demo-dataverseup).
 extraEnvVars:
   - name: DATAVERSE_DB_HOST
     value: acid-postgres-cluster-delta.postgres.svc.cluster.local
   - name: DATAVERSE_DB_USER
-    value: demo-dataverse
+    value: "demo-dataverseup"
   - name: DATAVERSE_DB_PASSWORD
     value: $DB_PASSWORD
   - name: DATAVERSE_DB_NAME
-    value: "demo-dataverse"
+    value: "demo-dataverseup"
   - name: POSTGRES_SERVER
     value: acid-postgres-cluster-delta.postgres.svc.cluster.local
   - name: POSTGRES_PORT
     value: "5432"
   - name: POSTGRES_DATABASE
-    value: demo-dataverse
+    value: "demo-dataverseup"
   - name: POSTGRES_USER
-    value: demo-dataverse
+    value: "demo-dataverseup"
   - name: POSTGRES_PASSWORD
     value: $DB_PASSWORD
   - name: PGPASSWORD
     value: $DB_PASSWORD
-  # In-release standalone Solr (same namespace as Dataverse; must match solrInit.solrHttpBase host).
+  # In-cluster Solr (edit host if release/namespace differ from demo-dataverseup).
   - name: SOLR_SERVICE_HOST
-    value: &solr_host_port "demo-dataverse-besties-solr.demo-dataverse-besties.svc.cluster.local:8983"
+    value: &solr_host_port "demo-dataverseup-solr.demo-dataverseup.svc.cluster.local:8983"
   - name: SOLR_SERVICE_PORT
     value: "8983"
   - name: SOLR_LOCATION
     value: *solr_host_port
   - name: DATAVERSE_SOLR_HOST
-    value: "demo-dataverse-besties-solr.demo-dataverse-besties.svc.cluster.local"
+    value: "demo-dataverseup-solr.demo-dataverseup.svc.cluster.local"
   - name: DATAVERSE_SOLR_PORT
     value: "8983"
   - name: DATAVERSE_SOLR_CORE
     value: dataverse
   - name: dataverse_solr_host
-    value: "demo-dataverse-besties-solr.demo-dataverse-besties.svc.cluster.local"
+    value: "demo-dataverseup-solr.demo-dataverseup.svc.cluster.local"
   - name: dataverse_solr_port
     value: "8983"
   - name: dataverse_solr_core
@@ -178,17 +180,17 @@ extraEnvVars:
   # In-cluster Dataverse HTTP base (for tooling that expects a full URL). If you mount compose-style init.d
   # that does http://${DATAVERSE_URL}/api, use host:port only (no scheme) instead.
   - name: DATAVERSE_URL
-    value: "http://demo-dataverse-besties.demo-dataverse-besties.svc.cluster.local:80"
+    value: "http://demo-dataverseup.demo-dataverseup.svc.cluster.local:80"
   # Official image (init_2_configure.sh): dataverse_* env → Payara create-system-properties (dots from underscores).
   # Without these, JSF often cannot resolve the public URL and "/" shows Dataverse "Page Not Found".
   - name: dataverse_siteUrl
-    value: https://demo-dataverse.notch8.cloud
+    value: "https://demo-dataverseup.notch8.cloud"
   - name: dataverse_fqdn
-    value: demo-dataverse.notch8.cloud
+    value: "demo-dataverseup"
   - name: DATAVERSE_SERVICE_HOST
-    value: demo-dataverse.notch8.cloud
+    value: "demo-dataverseup"
   - name: hostname
-    value: demo-dataverse.notch8.cloud
+    value: "demo-dataverseup"
   - name: JVM_OPTS
     value: "-Xmx2g -Xms2g"
   - name: DATAVERSE_PID_PROVIDERS
