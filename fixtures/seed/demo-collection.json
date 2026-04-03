@@ -1,0 +1,12 @@
+{
+  "name": "Demo collection",
+  "alias": "demo",
+  "dataverseContacts": [
+    {
+      "contactEmail": "admin@example.org"
+    }
+  ],
+  "affiliation": "Local development",
+  "description": "Seeded sub-dataverse for development (see README: docker compose run --rm dev_seed).",
+  "dataverseType": "UNCATEGORIZED"
+}

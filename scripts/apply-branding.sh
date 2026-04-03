@@ -1,6 +1,6 @@
 #!/bin/sh
 # Apply Dataverse installation branding via Admin API (idempotent PUTs).
-# Run after bootstrap. Token: DATAVERSE_API_TOKEN env or first line of /secrets/api/key.
+# Run after bootstrap. Token: DATAVERSE_API_TOKEN env or first line of /secrets/api/key (must be an admin user’s API token).
 # Configuration: source branding/branding.env (repo-relative path when run from compose).
 
 set -eu
@@ -18,7 +18,7 @@ fi
 
 if [ -z "$TOKEN" ]; then
   echo "apply-branding: skipping (no DATAVERSE_API_TOKEN and no readable /secrets/api/key)" >&2
-  echo "apply-branding: create a superuser token in the UI and save it on one line in secrets/api/key" >&2
+  echo "apply-branding: log in as the admin user, create an API token (Account page), save it on one line in secrets/api/key" >&2
   if [ "${APPLY_BRANDING_STRICT:-}" = "1" ]; then
     exit 1
   fi
@@ -54,7 +54,7 @@ curl_put_setting() {
     --data-binary "$_val" \
     "${API}/admin/settings/${_name}")
   if [ "$_code" != "200" ] && [ "$_code" != "204" ]; then
-    echo "apply-branding: WARNING ${_name} -> HTTP ${_code} (check superuser token)" >&2
+    echo "apply-branding: WARNING ${_name} -> HTTP ${_code} (check admin user API token in secrets/api/key)" >&2
   fi
 }
 

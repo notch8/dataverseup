@@ -10,7 +10,7 @@ case "${smtp_enabled}" in
 esac
 
 if [ "${system_email}" ]; then
-    curl -X PUT -d ${system_email} http://localhost:8080/api/admin/settings/:SystemEmail
+    curl -X PUT --data-binary "${system_email}" http://localhost:8080/api/admin/settings/:SystemEmail
     asadmin --user=${ADMIN_USER} --passwordfile=${PASSWORD_FILE} delete-javamail-resource mail/notifyMailSession
 
     AUTH_PROP="mail.smtp.auth=false"
