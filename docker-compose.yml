@@ -1,0 +1,275 @@
+x-dataverseup-workflow:
+  commands:
+    # One command: starts long-running services, then dev_bootstrap → dev_branding → dev_seed (depends_on order).
+    - docker compose up -d
+    # Re-apply only after changing fixtures or branding (idempotent):
+    # - docker compose run --rm dev_branding
+    # - docker compose run --rm dev_seed
+
+x-env-from-file: &env-from-file
+  env_file:
+    - .env
+
+services:
+    postgres:
+      <<: *env-from-file
+      container_name: postgres
+      ports:
+        - "5432:5432"
+      image: postgres:15-alpine
+      restart: unless-stopped
+
+      environment:
+        - "LC_ALL=C.UTF-8"
+        - "POSTGRES_DB"
+        - "POSTGRES_USER"
+        - "POSTGRES_PASSWORD"
+        - "POSTGRES_PORT"
+      volumes:
+        - postgres_data:/var/lib/postgresql/data
+        - ./triggers:/triggers
+
+    solr:
+      <<: *env-from-file
+      # Official Solr 9: matches IQSS develop conf/solr/solrconfig.xml (luceneMatchVersion 9.11).
+      image: solr:9.10.1
+      platform: linux/amd64
+      container_name: solr
+      ports:
+        - "8983:8983"
+      environment:
+        - "SOLR_JAVA_MEM=-Xms1g -Xmx1g"
+        - "SOLR_OPTS=-Dlog4j2.formatMsgNoLookups=true"
+      volumes:
+        - solr_data:/var/solr
+        - ./scripts/solr-initdb:/docker-entrypoint-initdb.d:ro
+        # Upstream IQSS files copied into the core on start (see scripts/solr-initdb/01-ensure-core.sh).
+        - ./config/schema.xml:/opt/upstream-solr-conf/schema.xml:ro
+        - ./config/solrconfig.xml:/opt/upstream-solr-conf/solrconfig.xml:ro
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.solr.rule=Host(`solr.${traefikhost}`)"
+        - "traefik.http.routers.solr.entrypoints=websecure"
+        - "traefik.http.routers.solr.tls=true"
+        - "traefik.http.services.solr.loadbalancer.server.port=8983"
+
+    minio:
+      <<: *env-from-file
+      # Please use fixed versions :D
+      image: minio/minio:RELEASE.2021-10-06T23-36-31Z
+      volumes:
+        - minio_data:/data
+      command:
+        - server
+        - /data
+        - --console-address
+        - ":9001"
+      environment:
+        - MINIO_ROOT_USER=${MINIO_ROOT_USER:-love}
+        - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD:-love1234}
+        # Do NOT use MINIO_DOMAIN or MINIO_SERVER_URL with Traefik.
+        # All Routing is done by Traefik, just tell minio where to redirect to.
+        - MINIO_BROWSER_REDIRECT_URL=https://minio-stash.${traefikhost}
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.minio.rule=Host(`minio.${traefikhost}`)
+        - traefik.http.routers.minio.entrypoints=websecure
+        - traefik.http.routers.minio.tls=true
+        - traefik.http.routers.minio.service=minio
+        - traefik.http.services.minio.loadbalancer.server.port=9000
+        - traefik.http.routers.minio-console.rule=Host(`minio-stash.${traefikhost}`)
+        - traefik.http.routers.minio-console.entrypoints=websecure
+        - traefik.http.routers.minio-console.tls=true
+        - traefik.http.routers.minio-console.service=minio-console
+        - traefik.http.services.minio-console.loadbalancer.server.port=9001
+
+    dataverse:
+      <<: *env-from-file
+      image: ${DOCKER_HUB}:${VERSION}
+      platform: linux/amd64
+      container_name: dataverse
+      # Stock GDCC image often expects elevated caps for Payara/installer; tighten for prod only if validated.
+      privileged: true
+      user:
+        "root"
+      ports:
+        #- "443:443"
+        - "4848:4848"
+        - "8080:8080"
+      environment:
+        - "CVM_SERVER_NAME=CESSDA" #Optional
+        - "WEBHOOK"
+        - "CESSDA"
+        - "CLARIN"
+        - "doi_authority"
+        - "doi_provider"
+        - "doi_username"
+        - "doi_password"
+        - "dataciterestapiurlstring"
+        - "baseurlstring"
+        - "aws_bucket_name"
+        - "aws_s3_profile"
+        - "aws_endpoint_url"
+        - "system_email"
+        - "mailhost"
+        - "mailuser"
+        - "no_reply_email"
+        - "smtp_password"
+        - "smtp_port"
+        - "socket_port"
+        - "smtp_auth"
+        - "smtp_starttls"
+        - "smtp_enabled"
+        - "smtp_type"
+        - "federated_json_file"
+        - "bucketname_1"
+        - "minio_label_1"
+        - "minio_bucket_1"
+        - "bucketname_2"
+        - "minio_profile_1"
+        - "minio_label_2"
+        - "minio_bucket_2"
+        - "minio_profile_2"
+        - "DATAVERSE_DB_HOST"
+        - "DATAVERSE_DB_USER"
+        - "DATAVERSE_DB_PASSWORD"
+        - "DATAVERSE_DB_NAME"
+        - "DATAVERSE_SERVICE_HOST"
+        - "DATAVERSE_URL"
+        - "SOLR_SERVICE_HOST"
+        - "SOLR_SERVICE_PORT"
+        - "CVM_SERVER_URL=https://ns.${traefikhost}"
+        - "LANG=en"
+        - "cvManager=http://"
+        - "BUNDLEPROPERTIES=Bundle.properties"
+        - "ADMIN_EMAIL=admin@${traefikhost}"
+        - "MAIL_SERVER=mailrelay"
+        - "SOLR_LOCATION=solr:8983"
+        # Dataverse 6.x first-boot PID provider (empty DB has no legacy settings yet).
+        - "DATAVERSE_PID_PROVIDERS=demo"
+        - "DATAVERSE_PID_DEFAULT_PROVIDER=demo"
+        - "DATAVERSE_PID_DEMO_TYPE=FAKE"
+        - "DATAVERSE_PID_DEMO_LABEL=demo"
+        - "DATAVERSE_PID_DEMO_AUTHORITY=10.5072"
+        - "DATAVERSE_PID_DEMO_SHOULDER=FK2/"
+        - "INIT_SCRIPTS_FOLDER"
+        - "hostname"
+        - "MAINLANG"
+        - "POSTGRES_SERVER"
+        - "POSTGRES_PORT"
+        - "POSTGRES_DATABASE"
+        - "POSTGRES_USER"
+        - "POSTGRES_PASSWORD"
+        - "PGPASSWORD"
+        - "TWORAVENS_LOCATION=NOT INSTALLED"
+        - "RSERVE_HOST=localhost"
+        - "RSERVE_PORT=6311"
+        - "RSERVE_USER=rserve"
+        - "RSERVE_PASSWORD=rserve"
+        # Java 17+: no PermGen; metaspace caps heap-class metadata separately from -Xmx.
+        - "JVM_OPTS=-Xmx1g -Xms1g -XX:MaxMetaspaceSize=512m"
+      healthcheck:
+        test: ["CMD-SHELL", "curl -sf --max-time 5 http://127.0.0.1:8080/api/info/version >/dev/null"]
+        interval: 10s
+        timeout: 8s
+        retries: 60
+        start_period: 300s
+      depends_on:
+        - postgres
+        - solr
+      volumes:
+        - ${CONFIGURATION_PATH}/secrets:/secrets
+        - dataverse_files:/data
+        # Branding: URL /logos/* -> DATAVERSE_FILES_DOCROOT (/dv/docroot). Mount only logos/navbar so
+        # /dv/docroot/logos/<id>/... (theme uploads) stays on the container filesystem.
+        - ./branding/docroot/logos/navbar:/dv/docroot/logos/navbar:ro
+        - ./branding/docroot/branding:/dv/docroot/branding:ro
+        - ./init.d:/opt/payara/init.d
+        - ./triggers:/opt/payara/triggers
+        - ./config/schema.xml:/opt/payara/dvinstall/schema.xml
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.services.dataverse.loadbalancer.server.port=8080"
+        # Edge Traefik (sc proxy) terminates TLS; forward plain HTTP to Payara :8080.
+        - "traefik.http.services.dataverse.loadbalancer.passHostHeader=true"
+        # Match www and bare host (*.localhost.direct resolves via localhost.direct DNS).
+        - "traefik.http.routers.dataverse.rule=Host(`www.${traefikhost}`) || Host(`${traefikhost}`)"
+        - "traefik.http.routers.dataverse.entrypoints=websecure"
+        - "traefik.http.routers.dataverse.tls=true"
+        - "traefik.http.routers.dataverse.service=dataverse"
+
+    dev_bootstrap:
+      <<: *env-from-file
+      image: gdcc/configbaker:${VERSION}
+      platform: linux/amd64
+      restart: "no"
+      # Persist API_TOKEN to secrets/api/bootstrap.env (mounted script avoids inline YAML/command quirks).
+      command:
+        - /bin/bash
+        - /bootstrap-entrypoint.sh
+      environment:
+        - DATAVERSE_URL=http://dataverse:8080
+        - TIMEOUT=20m
+      volumes:
+        - ${CONFIGURATION_PATH}/secrets:/secrets
+        - ./scripts/dev-bootstrap-entrypoint.sh:/bootstrap-entrypoint.sh:ro
+      depends_on:
+        dataverse:
+          condition: service_healthy
+
+    # After bootstrap: apply branding/branding.env via Admin API (idempotent).
+    # Re-run: docker compose run --rm dev_branding (see workflow at top of this file).
+    dev_branding:
+      <<: *env-from-file
+      image: curlimages/curl:8.6.0
+      restart: "no"
+      entrypoint: ["/bin/sh", "/scripts/dev-branding-entrypoint.sh"]
+      environment:
+        DATAVERSE_INTERNAL_URL: http://dataverse:8080
+        BRANDING_ENV_PATH: /branding/branding.env
+      volumes:
+        - ./scripts/dev-branding-entrypoint.sh:/scripts/dev-branding-entrypoint.sh:ro
+        - ./scripts/apply-branding.sh:/scripts/apply-branding.sh:ro
+        - ./branding:/branding:ro
+        - ${CONFIGURATION_PATH}/secrets:/secrets
+      depends_on:
+        dev_bootstrap:
+          condition: service_completed_successfully
+
+    # Optional manual seed: Native API creates sub-dataverse from fixtures/seed (see README).
+    # depends_on dev_branding: run only after bootstrap + branding (token + settings), and same compose network as dataverse.
+    dev_seed:
+      <<: *env-from-file
+      image: curlimages/curl:8.6.0
+      restart: "no"
+      entrypoint: ["/bin/sh", "/scripts/dev-seed-entrypoint.sh"]
+      environment:
+        DATAVERSE_INTERNAL_URL: http://dataverse:8080
+        # Fallback when the one-off run container cannot resolve `dataverse` but :8080 is published on the host.
+        DATAVERSE_INTERNAL_URL_FALLBACK: http://host.docker.internal:8080
+        SEED_FIXTURE: /fixtures/seed/demo-collection.json
+        SEED_ROOT: /fixtures/seed
+        SEED_PARENT_ALIAS: ${SEED_PARENT_ALIAS:-root}
+        SEED_WAIT_MAX_SECONDS: ${SEED_WAIT_MAX_SECONDS:-600}
+      extra_hosts:
+        - "host.docker.internal:host-gateway"
+      networks:
+        - default
+      depends_on:
+        dev_branding:
+          condition: service_completed_successfully
+      volumes:
+        - ./scripts/dev-seed-entrypoint.sh:/scripts/dev-seed-entrypoint.sh:ro
+        - ./scripts/seed-content.sh:/scripts/seed-content.sh:ro
+        - ./fixtures/seed:/fixtures/seed:ro
+        - ${CONFIGURATION_PATH}/secrets:/secrets
+
+volumes:
+  postgres_data:
+  minio_data:
+  dataverse_files:
+  solr_data:
+
+networks:
+  default:
+    name: stackcar
