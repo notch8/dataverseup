@@ -158,19 +158,8 @@ extraEnvVars:
     value: $DB_PASSWORD
   - name: PGPASSWORD
     value: $DB_PASSWORD
-  # In-cluster Solr (edit host if release/namespace differ from demo-dataverseup).
-  - name: SOLR_SERVICE_HOST
-    value: &solr_host_port "demo-dataverseup-solr.demo-dataverseup.svc.cluster.local:8983"
-  - name: SOLR_SERVICE_PORT
-    value: "8983"
-  - name: SOLR_LOCATION
-    value: *solr_host_port
-  - name: DATAVERSE_SOLR_HOST
-    value: "demo-dataverseup-solr.demo-dataverseup.svc.cluster.local"
-  - name: DATAVERSE_SOLR_PORT
-    value: "8983"
-  - name: DATAVERSE_SOLR_CORE
-    value: dataverse
+  # Uppercase SOLR_* / DATAVERSE_SOLR_* are set by the chart when internalSolr.enabled (see templates/deployment.yaml).
+  # Duplicate keys here caused kubectl apply warnings ("hides previous definition"). Override only for external Solr.
   - name: dataverse_solr_host
     value: "demo-dataverseup-solr.demo-dataverseup.svc.cluster.local"
   - name: dataverse_solr_port
