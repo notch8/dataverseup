@@ -4,9 +4,38 @@
 # Pass extra flags via HELM_EXTRA_ARGS, e.g.:
 #   HELM_EXTRA_ARGS="--values ./my-values.yaml --wait --timeout 45m0s" ./bin/helm_deploy my-release my-namespace
 #
+# Optional context guard (e.g. local dev): prefix allowlist checked against kubectl
+# current-context — deploy/k3d/install.sh sets HELM_DEPLOY_KUBE_CONTEXT_ALLOWLIST=k3d- by default.
+#
 # A second --timeout in HELM_EXTRA_ARGS overrides the default below (Helm uses the last value).
 
 set -e
+
+# Optional safety: if HELM_DEPLOY_KUBE_CONTEXT_ALLOWLIST is set (colon-separated
+# prefixes, e.g. k3d-:kind-), refuse to run unless kubectl current-context matches
+# one prefix. Not set by default so CI/prod pipelines are unchanged.
+if [ -n "${HELM_DEPLOY_KUBE_CONTEXT_ALLOWLIST:-}" ]; then
+  ctx=$(kubectl config current-context 2>/dev/null || echo "")
+  if [ -z "$ctx" ]; then
+    echo "helm_deploy: HELM_DEPLOY_KUBE_CONTEXT_ALLOWLIST is set but kubectl has no current context." >&2
+    exit 1
+  fi
+  matched=0
+  old_ifs=$IFS
+  IFS=:
+  for prefix in $HELM_DEPLOY_KUBE_CONTEXT_ALLOWLIST; do
+    case "$ctx" in
+      "${prefix}"*) matched=1; break ;;
+    esac
+  done
+  IFS=$old_ifs
+  if [ "$matched" != 1 ]; then
+    echo "helm_deploy: refusing to run: kubectl context is '${ctx}'." >&2
+    echo "  Expected context to start with one of (colon-separated): ${HELM_DEPLOY_KUBE_CONTEXT_ALLOWLIST}" >&2
+    echo "  Fix: kubectl config use-context <safe-local-context>  or unset HELM_DEPLOY_KUBE_CONTEXT_ALLOWLIST." >&2
+    exit 1
+  fi
+fi
 
 if [ -z "${1:-}" ] || [ -z "${2:-}" ]; then
   echo "Usage: ./bin/helm_deploy RELEASE_NAME NAMESPACE" >&2

@@ -15,7 +15,7 @@ data:
     MODE="${SOLR_INIT_MODE:-cloud}"
     if [[ "${MODE}" == "standalone" ]]; then
       COLLECTION="${SOLR_COLLECTION:-dataverse}"
-      BASE="${SOLR_HTTP_BASE:?set solrInit.solrHttpBase}"
+      BASE="${SOLR_HTTP_BASE:?set solrInit.solrHttpBase or enable internalSolr for a default}"
       AUTH=()
       if [[ -n "${SOLR_ADMIN_USER:-}" && -n "${SOLR_ADMIN_PASSWORD:-}" ]]; then
         AUTH=(-u "${SOLR_ADMIN_USER}:${SOLR_ADMIN_PASSWORD}")
@@ -32,7 +32,7 @@ data:
       exit 1
     fi
     # SolrCloud: upload Dataverse configset to ZK, then create collection if missing.
-    SOLR_BIN="${SOLR_BIN:-/opt/bitnami/solr/bin/solr}"
+    SOLR_BIN="${SOLR_BIN:-/opt/solr/bin/solr}"
     ZK="${SOLR_ZK_CONNECT:?set solrInit.zkConnect}"
     CONF_DIR="${SOLR_CONF_DIR:-/solr-conf}"
     COLLECTION="${SOLR_COLLECTION:-dataverse}"
@@ -60,7 +60,7 @@ data:
     fi
 
     # zk upconfig -d does not reliably use the mounted ConfigMap path; stage to /tmp first.
-    # Do not stage under $SOLR_HOME/server/solr/configsets (not writable when runAsNonRoot uid 1001).
+    # Do not stage under $SOLR_HOME/server/solr/configsets (not writable for the solr non-root user).
     # ConfigMap ships solr-conf.tgz (kubectl --from-file=DIR omits subdirs like lang/).
     STAGING="/tmp/dataverse_zk_conf"
     rm -rf "${STAGING}"
@@ -125,7 +125,7 @@ data:
       echo "solr-init: collection CREATE failed HTTP ${HTTP_CODE}" >&2
       echo "solr-init: Solr response:" >&2
       cat "${CREATE_BODY}" >&2 2>/dev/null || true
-      echo "solr-init: If you see unknown configset / ZK mismatch, ensure zkConnect matches Solr (often append /solr chroot for Bitnami)." >&2
+      echo "solr-init: If you see unknown configset / ZK mismatch, ensure zkConnect matches Solr (include /solr chroot if your distro uses one)." >&2
       exit 1
     fi
     if command -v jq >/dev/null 2>&1; then

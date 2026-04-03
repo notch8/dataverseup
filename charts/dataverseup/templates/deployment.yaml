@@ -11,6 +11,10 @@ spec:
   selector:
     matchLabels:
       {{- include "dataverseup.selectorLabels" . | nindent 6 }}
+  {{- with .Values.deploymentStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -31,7 +35,7 @@ spec:
       serviceAccountName: {{ include "dataverseup.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if or .Values.solrInit.enabled .Values.solrPreSetupInitContainer }}
+      {{- if or .Values.solrInit.enabled .Values.solrPreSetupInitContainer .Values.brandingNavbarLogos.enabled }}
       initContainers:
         {{- with .Values.solrPreSetupInitContainer }}
         {{- toYaml . | nindent 8 }}
@@ -42,9 +46,7 @@ spec:
           image: "{{ .Values.solrInit.image }}"
           imagePullPolicy: {{ .Values.solrInit.imagePullPolicy }}
           securityContext:
-            runAsUser: 1001
-            runAsGroup: 1001
-            runAsNonRoot: true
+            {{- toYaml .Values.solrInit.securityContext | nindent 12 }}
           command: ["/bin/bash", "/scripts/solr-init.sh"]
           {{- if .Values.solrInit.existingSecret }}
           envFrom:
@@ -59,7 +61,7 @@ spec:
             - name: SOLR_ZK_CONNECT
               value: {{ .Values.solrInit.zkConnect | default "" | quote }}
             - name: SOLR_HTTP_BASE
-              value: {{ .Values.solrInit.solrHttpBase | quote }}
+              value: {{ include "dataverseup.solrHttpBase" . | quote }}
             - name: SOLR_COLLECTION
               value: {{ .Values.solrInit.collection | quote }}
             - name: SOLR_CONFIGSET_NAME
@@ -70,6 +72,8 @@ spec:
               value: {{ .Values.solrInit.replicationFactor | toString | quote }}
             - name: SOLR_CONF_DIR
               value: "/solr-conf"
+            - name: SOLR_BIN
+              value: {{ .Values.solrInit.solrBin | quote }}
             {{- if and (not .Values.solrInit.existingSecret) .Values.solrInit.adminUser }}
             - name: SOLR_ADMIN_USER
               value: {{ .Values.solrInit.adminUser | quote }}
@@ -88,6 +92,25 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
         {{- end }}
+        {{- if .Values.brandingNavbarLogos.enabled }}
+        - name: branding-docroot-init
+          image: {{ .Values.brandingNavbarLogos.initImage | quote }}
+          imagePullPolicy: IfNotPresent
+          command:
+            - sh
+            - -c
+            - |
+              DOCROOT='{{ ternary .Values.docrootPersistence.mountPath "/dv/docroot" .Values.docrootPersistence.enabled }}'
+              mkdir -p "${DOCROOT}/logos/navbar"
+              cp /brand/logo.svg "${DOCROOT}/logos/navbar/logo.svg"
+              chown -R {{ .Values.brandingNavbarLogos.docrootUid }}:{{ .Values.brandingNavbarLogos.docrootGid }} "${DOCROOT}"
+          volumeMounts:
+            - name: {{ if .Values.docrootPersistence.enabled }}docroot{{ else }}branding-writable-docroot{{ end }}
+              mountPath: {{ ternary .Values.docrootPersistence.mountPath "/dv/docroot" .Values.docrootPersistence.enabled | quote }}
+            - name: branding-navbar-cm
+              mountPath: /brand
+              readOnly: true
+        {{- end }}
       {{- end }}
       containers:
         - name: {{ .Chart.Name }}
@@ -99,6 +122,10 @@ spec:
             - name: http
               containerPort: {{ .Values.container.port }}
               protocol: TCP
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- with .Values.livenessProbe }}
           livenessProbe:
             {{- toYaml . | nindent 12 }}
@@ -111,8 +138,24 @@ spec:
           envFrom:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          {{- if or .Values.extraEnvVars .Values.awsS3.enabled }}
+          {{- if or .Values.internalSolr.enabled .Values.extraEnvVars .Values.awsS3.enabled }}
           env:
+            {{- if .Values.internalSolr.enabled }}
+            {{- $solrSvc := printf "%s-solr" (include "dataverseup.fullname" .) }}
+            # GDCC ct profile defaults to solr:8983 + core collection1; override for in-chart Solr (core from solrInit.collection).
+            - name: DATAVERSE_SOLR_HOST
+              value: {{ $solrSvc | quote }}
+            - name: DATAVERSE_SOLR_PORT
+              value: "8983"
+            - name: DATAVERSE_SOLR_CORE
+              value: {{ .Values.solrInit.collection | quote }}
+            - name: SOLR_SERVICE_HOST
+              value: {{ $solrSvc | quote }}
+            - name: SOLR_SERVICE_PORT
+              value: "8983"
+            - name: SOLR_LOCATION
+              value: {{ printf "%s:8983" $solrSvc | quote }}
+            {{- end }}
             {{- if .Values.extraEnvVars }}
             {{- toYaml .Values.extraEnvVars | nindent 12 }}
             {{- end }}
@@ -139,7 +182,7 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.volumeMounts }}
+          {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.brandingNavbarLogos.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.volumeMounts }}
           volumeMounts:
             {{- if .Values.persistence.enabled }}
             - name: data
@@ -148,6 +191,9 @@ spec:
             {{- if .Values.docrootPersistence.enabled }}
             - name: docroot
               mountPath: {{ .Values.docrootPersistence.mountPath }}
+            {{- else if .Values.brandingNavbarLogos.enabled }}
+            - name: branding-writable-docroot
+              mountPath: /dv/docroot
             {{- end }}
             {{- if or .Values.configMap.enabled .Values.mail.enabled }}
             - name: init-d
@@ -167,17 +213,30 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
-      {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.volumes .Values.solrInit.enabled }}
+      {{- if or .Values.persistence.enabled .Values.docrootPersistence.enabled .Values.brandingNavbarLogos.enabled .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled .Values.volumes .Values.solrInit.enabled }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
           persistentVolumeClaim:
-            claimName: {{ if .Values.persistence.existingClaim }}{{ .Values.persistence.existingClaim }}{{ else }}{{ include "dataverseup.fullname" . }}-data{{ end }}
+            claimName: {{ if empty (.Values.persistence.existingClaim | default "") }}{{ include "dataverseup.fullname" . }}-data{{ else }}{{ .Values.persistence.existingClaim }}{{ end }}
         {{- end }}
         {{- if .Values.docrootPersistence.enabled }}
         - name: docroot
           persistentVolumeClaim:
-            claimName: {{ if .Values.docrootPersistence.existingClaim }}{{ .Values.docrootPersistence.existingClaim }}{{ else }}{{ include "dataverseup.fullname" . }}-docroot{{ end }}
+            claimName: {{ if empty (.Values.docrootPersistence.existingClaim | default "") }}{{ include "dataverseup.fullname" . }}-docroot{{ else }}{{ .Values.docrootPersistence.existingClaim }}{{ end }}
+        {{- end }}
+        {{- if .Values.brandingNavbarLogos.enabled }}
+        - name: branding-navbar-cm
+          configMap:
+            name: {{ include "dataverseup.fullname" . }}-branding-navbar
+            defaultMode: 0444
+            items:
+              - key: logo.svg
+                path: logo.svg
+        {{- if not .Values.docrootPersistence.enabled }}
+        - name: branding-writable-docroot
+          emptyDir: {}
+        {{- end }}
         {{- end }}
         {{- if or .Values.configMap.enabled .Values.mail.enabled .Values.awsS3.enabled }}
         - name: init-d

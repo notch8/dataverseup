@@ -1,4 +1,4 @@
-{{- if and .Values.docrootPersistence.enabled (not .Values.docrootPersistence.existingClaim) }}
+{{- if and .Values.docrootPersistence.enabled (empty (.Values.docrootPersistence.existingClaim | default "")) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

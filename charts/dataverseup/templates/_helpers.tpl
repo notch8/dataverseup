@@ -51,6 +51,20 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
+Bootstrap / configbaker Job pod labels. Must NOT use selectorLabels alone: Deployment matchLabels are only
+name+instance, so Job pods would match and `kubectl logs deploy/<release>` can pick the wrong pod.
+*/}}
+{{- define "dataverseup.bootstrapPodLabels" -}}
+helm.sh/chart: {{ include "dataverseup.chart" . }}
+app.kubernetes.io/name: {{ include "dataverseup.name" . }}-bootstrap
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- if .Chart.AppVersion }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- end }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
 Service / CLI label query for the main Dataverse pods only. Pods also set component=primary;
 Deployment matchLabels stay name+instance only so upgrades do not hit immutable selector changes.
 */}}
@@ -89,4 +103,18 @@ Create the name of the service account to use
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
+{{- end }}
+
+{{/*
+Solr admin base URL (no path) for solrInit initContainer: explicit solrInit.solrHttpBase, else in-release Solr
+Service when internalSolr is enabled, else a placeholder for external / shared cluster Solr (override required).
+*/}}
+{{- define "dataverseup.solrHttpBase" -}}
+{{- if .Values.solrInit.solrHttpBase -}}
+{{- .Values.solrInit.solrHttpBase -}}
+{{- else if .Values.internalSolr.enabled -}}
+http://{{ include "dataverseup.fullname" . }}-solr.{{ .Release.Namespace }}.svc.cluster.local:8983
+{{- else -}}
+http://solr.solr.svc.cluster.local:8983
+{{- end -}}
 {{- end }}

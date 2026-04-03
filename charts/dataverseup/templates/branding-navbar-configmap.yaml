@@ -1,0 +1,12 @@
+{{- if .Values.brandingNavbarLogos.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dataverseup.fullname" . }}-branding-navbar
+  labels:
+    {{- include "dataverseup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: branding-navbar
+data:
+  logo.svg: |
+{{ .Files.Get "files/branding-navbar-logo.svg" | nindent 4 }}
+{{- end }}

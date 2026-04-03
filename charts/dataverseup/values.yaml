@@ -4,6 +4,10 @@
 
 replicaCount: 1
 
+# Optional Deployment strategy (e.g. for replicaCount=1 on small clusters: maxSurge: 0, maxUnavailable: 1
+# avoids two Payara JVMs during a rolling update).
+deploymentStrategy: {}
+
 # Container listens on 8080 (Payara). Service can expose 80 for Ingress.
 container:
   port: 8080
@@ -81,6 +85,9 @@ readinessProbe:
   timeoutSeconds: 5
   failureThreshold: 6
 
+# Optional startupProbe (omit key to disable). While failing, liveness/readiness do not run — avoids SIGTERM
+# during slow Payara boot when :8080 still refuses connections. See deploy/k3d/values-k3d.yaml.in.
+
 ingress:
   enabled: false
   className: ""
@@ -138,6 +145,14 @@ docrootPersistence:
   storageClassName: ""
   existingClaim: ""
 
+# Navbar logo from chart (symlink to branding/docroot/logos/navbar/logo.svg). Uses a writable emptyDir on
+# /dv/docroot (or copies onto docrootPersistence PVC) — read-only ConfigMap mounts break ConfigCheckService.
+brandingNavbarLogos:
+  enabled: false
+  initImage: busybox:1.36
+  docrootUid: 1000
+  docrootGid: 1000
+
 # Optional ConfigMap created by this chart; keys become filenames under mountPath (e.g. init scripts).
 configMap:
   enabled: false
@@ -186,12 +201,15 @@ affinity: {}
 # Optional raw initContainers run before the main container (same idea as Hyrax chart solrPreSetupInitContainer).
 solrPreSetupInitContainer: []
 
-# Standalone Solr (no ZooKeeper) in the same namespace as this release — official solr image, single core
-# "dataverse" via solr-precreate. Uses solrInit.confConfigMap (solr-conf.tgz or flat conf). Turn off your
-# external SolrCloud auth/complexity for demos; point solrInit.solrHttpBase at this Service (port 8983).
+# Dedicated Solr for this release only — not a shared cluster Solr service or SolrCloud pool. Official
+# image, single core "dataverse" via solr-precreate + solrInit.confConfigMap (solr-conf.tgz or flat keys).
+# Pair with solrInit.enabled and solrInit.mode: standalone (default). solrHttpBase can stay empty: the chart
+# fills http://<release>-solr.<namespace>.svc.cluster.local:8983 when internalSolr is enabled.
+# Pin matches docker-compose.yml (IQSS conf/solr for Solr 9 / Lucene 9.x). On Apple Silicon, prefer amd64
+# nodes or cluster image policy — Compose uses platform linux/amd64 for Solr/Dataverse.
 internalSolr:
   enabled: false
-  image: solr:8.11.2
+  image: solr:9.10.1
   imagePullPolicy: IfNotPresent
   # Official solr image uses uid/gid 8983; fsGroup + init chown make PVC/emptyDir writable for solr-precreate.
   podSecurityContext:
@@ -207,16 +225,26 @@ internalSolr:
 # Uses a Solr image for `solr zk upconfig`, not the Dataverse image (which has no Hyrax shell scripts).
 # Provide a ConfigMap whose keys are Solr conf filenames (schema.xml, solrconfig.xml, …) from the Dataverse
 # release that matches your Dataverse version — see https://guides.dataverse.org/en/latest/installation/prerequisites.html#solr
+# Image aligns with internalSolr / Compose (Solr 9). standalone mode only needs curl+bash; cloud mode runs
+# `solr zk upconfig` — use a Solr major that matches your SolrCloud nodes; override solrBin if you use Bitnami.
 solrInit:
   enabled: false
-  image: bitnamilegacy/solr:8.11.2-debian-11-r50
+  image: solr:9.10.1
   imagePullPolicy: IfNotPresent
-  # cloud = zk upconfig + Collections API (needs zkConnect). standalone = wait for core ping only (use with internalSolr.enabled).
-  mode: cloud
-  # ZooKeeper connect string Solr uses (include chroot if any), e.g. zk-0.zk-hs:2181,zk-1.zk-hs:2181,zk-2.zk-hs:2181/solr
+  # CLI path inside solrInit.image (official Solr 9: /opt/solr/bin/solr; Bitnami legacy: /opt/bitnami/solr/bin/solr).
+  solrBin: /opt/solr/bin/solr
+  securityContext:
+    runAsUser: 8983
+    runAsGroup: 8983
+    runAsNonRoot: true
+  # standalone = wait for core ping (default; use with internalSolr — new Solr pod with this deploy).
+  # cloud = zk upconfig + Collections API — only if you point at an existing SolrCloud + ZK (not the in-chart Solr).
+  mode: standalone
+  # ZooKeeper connect string (required only when mode: cloud), e.g. zk-0.zk-hs:2181/solr
   zkConnect: ""
-  # Base URL for Solr admin HTTP (no path suffix), e.g. http://solr.solr.svc.cluster.local:8983
-  solrHttpBase: "http://solr.solr.svc.cluster.local:8983"
+  # Solr admin base URL (no path). Leave empty when internalSolr.enabled — chart sets the in-release Service URL.
+  # For a shared cluster Solr or SolrCloud front door, set explicitly, e.g. http://solr.mysolr.svc.cluster.local:8983
+  solrHttpBase: ""
   collection: dataverse
   configSetName: dataverse_config
   numShards: 1
@@ -246,13 +274,14 @@ awsS3:
     credentials: credentials
     config: config
 
-# One-shot gdcc/configbaker: root Dataverse, metadata blocks, dataverseAdmin (dev profile), FAKE DOI, etc.
-# See docs/HELM.md for install order and smoke tests.
-# - helmHook=true (default): Helm post-install hook only (does not run on helm upgrade). Safe for GitOps.
-# - helmHook=false: plain Job (name …-bootstrap-once). For `helm template --show-only … | kubectl apply` only;
-#   do not set helmHook=false in a values file that you helm upgrade repeatedly (Job spec is immutable).
+# gdcc/configbaker Job (post-install hook by default).
+# - mode: oneShot — `bootstrapJob.command` only (e.g. bootstrap.sh dev), same as a minimal container demo.
+# - mode: compose — like docker compose: configbaker writes API token, then apply-branding.sh, then seed-content.sh
+#   (repo scripts + fixtures baked into a ConfigMap). Uses emptyDir for bootstrap.env inside the Job only.
+# - helmHook=true: runs once on install only (not upgrade). helmHook=false: plain Job (immutable spec on upgrade).
 bootstrapJob:
   enabled: false
+  mode: oneShot
   helmHook: true
   image:
     repository: gdcc/configbaker
@@ -267,3 +296,16 @@ bootstrapJob:
   backoffLimit: 2
   ttlSecondsAfterFinished: 86400
   resources: {}
+  compose:
+    # Wait for /api/info/version before bootstrap.sh (Payara can be slow after install).
+    waitMaxSeconds: 900
+    waitSleepSeconds: 5
+    # Run fixtures/seed after branding (set false for bootstrap+branding only).
+    seed: true
+    # post-upgrade hook: branding + seed only (no configbaker). Use when the release was upgraded and the
+    # post-install hook never ran compose, or you need to re-apply after changing branding/fixtures in the chart.
+    # Create a Secret first, e.g. kubectl create secret generic dv-admin-api-token -n ns --from-literal=token=UUID
+    postUpgradeBrandingSeedJob:
+      enabled: false
+      existingSecret: ""
+      secretKey: token

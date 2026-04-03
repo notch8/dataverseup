@@ -31,6 +31,8 @@ See **[docs/HELM.md](../../docs/HELM.md)** in this repository for prerequisites,
 | `image.repository` / `image.tag` | GDCC Dataverse image |
 | `extraEnvFrom` / `extraEnvVars` | DB, Solr, URL, JVM — **use Secrets for credentials** |
 | `persistence` | RWO PVC for `/data` |
-| `internalSolr` + `solrInit` | In-cluster Solr; requires **full** Solr conf ConfigMap |
+| `internalSolr` + `solrInit` | **Dedicated Solr 9** pod with this release (not a shared cluster Solr). Default **`solrInit.mode: standalone`**; empty **`solrInit.solrHttpBase`** → chart uses the in-release Solr Service. Core **`dataverse`** (Compose uses **`collection1`**). SolrCloud (`mode: cloud`) needs ZK + **full** conf or `solr-conf.tgz`. |
 | `bootstrapJob` | First-time `configbaker` bootstrap |
 | `ingress` | HTTP routing to Service port 80 |
+
+Solr alignment with Docker Compose (IQSS **`config/`** files, core naming, `solrInit` overrides) is documented in **[docs/HELM.md](../../docs/HELM.md)**.

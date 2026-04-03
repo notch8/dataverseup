@@ -1,5 +1,5 @@
 {{- if .Values.internalSolr.enabled }}
-In-cluster standalone Solr (no ZooKeeper): Service {{ include "dataverseup.fullname" . }}-solr port 8983 — from another pod in this namespace use http://{{ include "dataverseup.fullname" . }}-solr.{{ .Release.Namespace }}.svc.cluster.local:8983 . Ensure solrInit.solrHttpBase and DATAVERSE_SOLR_HOST match that host.
+Dedicated Solr with this release (not a shared cluster Solr): Service {{ include "dataverseup.fullname" . }}-solr port 8983 — in-namespace URL http://{{ include "dataverseup.fullname" . }}-solr.{{ .Release.Namespace }}.svc.cluster.local:8983 . If solrInit.solrHttpBase is unset, the chart uses that URL for the init wait. Set app env (e.g. DATAVERSE_SOLR_HOST / SOLR_LOCATION) to the same host:port and core {{ .Values.solrInit.collection }}.
 
 {{- end }}
 {{- if .Values.docrootPersistence.enabled }}

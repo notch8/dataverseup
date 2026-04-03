@@ -20,27 +20,49 @@ Pass extra Helm flags with **`HELM_EXTRA_ARGS`** (values file, longer timeout, e
 HELM_EXTRA_ARGS="--values ./your-values.yaml --wait --timeout 45m0s" ./bin/helm_deploy my-release my-namespace
 ```
 
+
 ## What the chart deploys
 
 - **Dataverse** (`gdcc/dataverse`) — Payara on port **8080**; Service may expose **80** → target **8080** for Ingress compatibility.
-- **Optional bootstrap Job** (`gdcc/configbaker`) — `bootstrap.sh dev` (FAKE DOI, `dataverseAdmin`, etc.). Usually a **Helm post-install hook** (`bootstrapJob.helmHook: true`).
-- **Optional in-cluster Solr** (`internalSolr`) — single-node Solr with core `dataverse`, plus **`solrInit`** initContainer to wait for Solr / upload config (mode **cloud** or **standalone**).
+- **Optional bootstrap Job** (`gdcc/configbaker`) — usually a **Helm post-install hook** (`bootstrapJob.helmHook: true`). **`bootstrapJob.mode: oneShot`** runs **`bootstrapJob.command`** only (default: `bootstrap.sh dev` — FAKE DOI, `dataverseAdmin`, etc.). **`bootstrapJob.mode: compose`** mirrors local Docker Compose: wait for the API, run configbaker with a writable token file on `emptyDir`, then **`apply-branding.sh`** and **`seed-content.sh`** (fixtures baked into a ConfigMap). Tune waits with **`bootstrapJob.compose`** and allow a longer **`bootstrapJob.timeout`** when seeding.
+- **Optional dedicated Solr** (`internalSolr`) — a **new** Solr Deployment/Service in the **same release and namespace** as Dataverse (not wiring into someone else’s shared “cluster Solr”). Default **`solrInit.mode`** is **`standalone`**: the Dataverse pod waits for that Solr core before starting. Use **`solrInit.mode: cloud`** only when Dataverse talks to **SolrCloud + ZooKeeper** you operate separately.
 - **Optional S3** — `awsS3.enabled` mounts AWS credentials and ships the S3 init script.
 
 The chart does **not** install PostgreSQL by default. Supply DB settings with **`extraEnvVars`** and/or **`extraEnvFrom`** (recommended: Kubernetes **Secret** for passwords).
 
+### Recommended Solr layout: new instance with this deploy
+
+Enable **`internalSolr.enabled`**, **`solrInit.enabled`**, keep **`solrInit.mode: standalone`**, and supply **`solrInit.confConfigMap`**. Leave **`solrInit.solrHttpBase` empty** — the chart sets the Solr admin URL to the in-release Service (`http://<release>-solr.<namespace>.svc.cluster.local:8983`). Point your app Secret at that same host/port and core (see table below). You do **not** need an existing Solr installation in the cluster.
+
+## Docker Compose vs Helm (Solr)
+
+Local **`docker-compose.yml`** and this chart both target **official Solr 9** (`solr:9.10.1`) and IQSS **`conf/solr`** files vendored under repo **`config/`** (refresh from IQSS `develop` or a release tag as in the root **`README.md`**).
+
+| | Docker Compose | Helm (`internalSolr` + `solrInit`) |
+|---|----------------|-----------------------------------|
+| Solr image pin | `solr:9.10.1` | `internalSolr.image` / `solrInit.image` default `solr:9.10.1` |
+| Default core name | **`collection1`** (see `scripts/solr-initdb/01-ensure-core.sh`) | **`dataverse`** (`solr-precreate` in `internal-solr-deployment.yaml`) |
+| App Solr address | `SOLR_LOCATION=solr:8983` (host:port) | With **`internalSolr.enabled`**, the chart sets **`DATAVERSE_SOLR_HOST`**, **`DATAVERSE_SOLR_PORT`**, **`DATAVERSE_SOLR_CORE`**, **`SOLR_SERVICE_*`**, and **`SOLR_LOCATION`** to the in-release Solr Service and **`solrInit.collection`** (default **`dataverse`**). The GDCC `ct` profile otherwise defaults to host **`solr`** and core **`collection1`**, which breaks Kubernetes installs if unset. |
+
+Compose only copies **`schema.xml`** and **`solrconfig.xml`** into the core after precreate. **SolrCloud** (`solrInit.mode: cloud`) still needs a **full** conf tree or **`solr-conf.tgz`** (including `lang/`, `stopwords.txt`, etc.) for `solr zk upconfig` — see [Solr prerequisites](https://guides.dataverse.org/en/latest/installation/prerequisites.html#solr).
+
+### `solrInit` image: standalone (default) vs SolrCloud
+
+- **Standalone** (default, with **`internalSolr`**): the initContainer **waits** for `/solr/<core>/admin/ping` via `curl`; the default **`solr:9.10.1`** image is sufficient. This matches launching a **solo Solr** with the chart instead of consuming a shared cluster Solr Service.
+- **Cloud / ZooKeeper** (optional): set **`solrInit.mode: cloud`** and **`solrInit.zkConnect`** when Dataverse uses **SolrCloud** you run elsewhere. The same container runs **`solr zk upconfig`**; use a Solr **major** compatible with that cluster. Override **`solrInit.image`**, **`solrInit.solrBin`**, and **`solrInit.securityContext`** if you use a vendor image (e.g. legacy Bitnami).
+
 ## Install flow (recommended order)
 
-1. **Create namespace**  
+1. **Create namespace**
    `kubectl create namespace <ns>`
 
-2. **Database**  
+2. **Database**
    Provision Postgres and a database/user for Dataverse. Note the service DNS name inside the cluster (e.g. `postgres.<ns>.svc.cluster.local`).
 
-3. **Solr configuration ConfigMap** (if using `solrInit` / `internalSolr`)  
+3. **Solr configuration ConfigMap** (if using `solrInit` / `internalSolr`)
    Dataverse needs a **full** Solr configuration directory for its version — not `schema.xml` alone. Build a ConfigMap whose keys are the files under that conf directory (or a single `solr-conf.tgz` as produced by your packaging process). See [Solr prerequisites](https://guides.dataverse.org/en/latest/installation/prerequisites.html#solr).
 
-4. **Application Secret** (example name `dataverse-app-env`)  
+4. **Application Secret** (example name `dataverse-app-env`)
    Prefer `stringData` for passwords. Include at least the variables the GDCC image expects for JDBC and Solr (mirror what you use in Docker Compose `.env`). Typical keys include:
 
    - `DATAVERSE_DB_HOST`, `DATAVERSE_DB_USER`, `DATAVERSE_DB_PASSWORD`, `DATAVERSE_DB_NAME`
@@ -49,12 +71,12 @@ The chart does **not** install PostgreSQL by default. Supply DB settings with **
    - Public URL / hostname: `DATAVERSE_URL`, `hostname`, `DATAVERSE_SERVICE_HOST` (used by init scripts and UI)
    - Optional: `DATAVERSE_PID_*` for FAKE DOI (see default chart comments and [container demo docs](https://guides.dataverse.org/en/latest/container/running/demo.html))
 
-5. **Values file**  
+5. **Values file**
    Start from `charts/dataverseup/values.yaml` and override with a small values file of your own. At minimum for a first install:
 
    - `persistence.enabled: true` (file store)
    - `extraEnvFrom` pointing at your Secret
-   - If using bundled Solr: `internalSolr.enabled`, `solrInit.enabled`, `solrInit.mode: standalone`, `solrInit.confConfigMap`, `solrInit.solrHttpBase` matching the in-chart Solr Service
+   - If using dedicated in-chart Solr: `internalSolr.enabled`, `solrInit.enabled`, `solrInit.confConfigMap`, `solrInit.mode: standalone` (default). Omit `solrInit.solrHttpBase` to use the auto-derived in-release Solr Service URL
    - `bootstrapJob.enabled: true` for first-time seeding
 
 6. **Lint and render**
@@ -110,6 +132,8 @@ The chart embeds the S3 and mail relay scripts from **`init.d/`** at the repo ro
 
 - Bump `image.tag` / `Chart.appVersion` together with [Dataverse release notes](https://github.com/IQSS/dataverse/releases).
 - Reconcile Solr conf ConfigMap when Solr schema changes.
+- When upgrading **internal Solr** across a **major Solr version** (e.g. 8 → 9), use a **fresh** Solr data volume (new PVC or wipe `internalSolr` persistence) so cores are recreated; same idea as Compose (see root **`README.md`**).
+- After bumping **`solrInit`** / **`internalSolr`** images, re-test **SolrCloud** installs (`solr zk` + collection create) in a non-production cluster if you use `solrInit.mode: cloud`.
 - If `bootstrapJob.helmHook` is **true**, the bootstrap Job runs on **post-install only**, not on every upgrade (by design).
 
 ## Learnings log

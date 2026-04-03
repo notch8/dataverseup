@@ -1,19 +1,18 @@
-{{- if .Values.bootstrapJob.enabled }}
+{{- if and .Values.bootstrapJob.enabled (eq .Values.bootstrapJob.mode "compose") .Values.bootstrapJob.compose.postUpgradeBrandingSeedJob.enabled .Values.bootstrapJob.compose.postUpgradeBrandingSeedJob.existingSecret }}
+{{- $pu := .Values.bootstrapJob.compose.postUpgradeBrandingSeedJob }}
 {{- $dvUrl := .Values.bootstrapJob.dataverseUrl | default (printf "http://%s.%s.svc.cluster.local:%v" (include "dataverseup.fullname" .) .Release.Namespace .Values.service.port) }}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "dataverseup.fullname" . }}-bootstrap{{ if not .Values.bootstrapJob.helmHook }}-once{{ end }}
+  name: {{ include "dataverseup.fullname" . }}-bootstrap-branding-seed
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "dataverseup.labels" . | nindent 4 }}
-    app.kubernetes.io/component: configbaker-bootstrap
-  {{- if .Values.bootstrapJob.helmHook }}
+    app.kubernetes.io/component: configbaker-bootstrap-branding-seed
   annotations:
-    helm.sh/hook: post-install
-    helm.sh/hook-weight: "15"
+    helm.sh/hook: post-upgrade
+    helm.sh/hook-weight: "20"
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded,hook-failed
-  {{- end }}
 spec:
   backoffLimit: {{ .Values.bootstrapJob.backoffLimit }}
   ttlSecondsAfterFinished: {{ .Values.bootstrapJob.ttlSecondsAfterFinished }}
@@ -21,7 +20,7 @@ spec:
     metadata:
       labels:
         {{- include "dataverseup.bootstrapPodLabels" . | nindent 8 }}
-        app.kubernetes.io/component: configbaker-bootstrap
+        app.kubernetes.io/component: configbaker-bootstrap-branding-seed
     spec:
       restartPolicy: Never
       {{- with .Values.imagePullSecrets }}
@@ -32,9 +31,10 @@ spec:
         - name: configbaker
           image: "{{ .Values.bootstrapJob.image.repository }}:{{ .Values.bootstrapJob.image.tag | default .Values.image.tag }}"
           imagePullPolicy: {{ .Values.bootstrapJob.image.pullPolicy }}
-          {{- if eq .Values.bootstrapJob.mode "compose" }}
           command: ["/bin/bash", "/bootstrap-chain/bootstrap-chain.sh"]
           env:
+            - name: BOOTSTRAP_CHAIN_SKIP_BOOTSTRAP
+              value: "1"
             - name: DATAVERSE_URL
               value: {{ $dvUrl | quote }}
             - name: DATAVERSE_INTERNAL_URL
@@ -53,6 +53,11 @@ spec:
               value: "/config/branding.env"
             - name: TIMEOUT
               value: {{ .Values.bootstrapJob.timeout | quote }}
+            - name: DATAVERSE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $pu.existingSecret | quote }}
+                  key: {{ $pu.secretKey | quote }}
           volumeMounts:
             - name: bootstrap-scripts
               mountPath: /bootstrap-chain
@@ -65,19 +70,10 @@ spec:
             - name: seed-flat
               mountPath: /seed-flat
               readOnly: true
-          {{- else }}
-          command: {{- toYaml .Values.bootstrapJob.command | nindent 12 }}
-          env:
-            - name: DATAVERSE_URL
-              value: {{ $dvUrl | quote }}
-            - name: TIMEOUT
-              value: {{ .Values.bootstrapJob.timeout | quote }}
-          {{- end }}
           {{- with .Values.bootstrapJob.resources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- if eq .Values.bootstrapJob.mode "compose" }}
       volumes:
         - name: bootstrap-scripts
           configMap:
@@ -116,5 +112,4 @@ spec:
                 path: files_sample.csv
         - name: bootstrap-work
           emptyDir: {}
-      {{- end }}
 {{- end }}
