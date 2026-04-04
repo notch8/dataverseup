@@ -46,7 +46,6 @@ jobs:
       SYSTEM_EMAIL: ${{ secrets.SYSTEM_EMAIL }}
       NO_REPLY_EMAIL: ${{ secrets.NO_REPLY_EMAIL }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-      MAIL_SMTP_PASSWORD: ${{ secrets.MAIL_SMTP_PASSWORD }}
       SMTP_ADDRESS: ${{ vars.SMTP_ADDRESS }}
       SMTP_USER_NAME: ${{ vars.SMTP_USER_NAME }}
       SMTP_PORT: ${{ vars.SMTP_PORT }}
@@ -96,12 +95,11 @@ jobs:
           echo "$KUBECONFIG_FILE" | base64 -d >"$KUBECONFIG"
           export SMTP_PORT="${SMTP_PORT:-25}"
           export SOCKET_PORT="${SOCKET_PORT:-${SMTP_PORT}}"
-          export SMTP_PASSWORD="${SMTP_PASSWORD:-${MAIL_SMTP_PASSWORD:-}}"
           if [ -z "${NO_REPLY_EMAIL:-}" ] && [ -n "${SMTP_DOMAIN:-}" ]; then
             export NO_REPLY_EMAIL="noreply@${SMTP_DOMAIN}"
           fi
           # Only secrets + rollout id — hosts, Solr DNS, ingress, and bucket are literals in the *.tmpl.yaml file.
-          ENVSUBST_VARS='$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $SMTP_PASSWORD $SMTP_AUTH'
+          ENVSUBST_VARS='$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $NO_REPLY_EMAIL $SMTP_PASSWORD $SMTP_AUTH'
           envsubst "$ENVSUBST_VARS" <"$TMPL" >"$OUT"
 
       - name: Solr conf ConfigMap (pre-Helm)

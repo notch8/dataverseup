@@ -2,6 +2,11 @@
 
 Notch8's **ops wrapper** around stock **[Dataverse](https://dataverse.org/)** (GDCC container images), aligned with the **DataverseUp** plan: pinned versions, compose-first bring-up, and a **Helm chart** for Kubernetes without forking core.
 
+| | |
+|--|--|
+| **Repository** | [github.com/notch8/dataverseup](https://github.com/notch8/dataverseup) |
+| **Live demo** | [demo-dataverseup.notch8.cloud](https://demo-dataverseup.notch8.cloud/) — deployed from this stack (Helm/Kubernetes); seeded demo data for smoke tests |
+
 ## Quick start (local / lab)
 
 1. **Prerequisites:** Docker + Docker Compose v2 (`docker compose`), ~4 GB+ RAM (Payara + Solr + Postgres), and **Ruby + RubyGems** for [Stack Car](https://rubygems.org/gems/stack_car) (edge TLS — same **`*.localhost.direct`** pattern as Hyku). On Apple Silicon, images use `linux/amd64` (emulation).

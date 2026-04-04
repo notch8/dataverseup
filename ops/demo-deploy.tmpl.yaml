@@ -5,10 +5,10 @@
 # They must stay consistent with your Helm **release name** and **namespace** (e.g. both `demo-dataverseup`).
 #
 # **envsubst** (CI: see `.github/workflows/deploy.yaml`) only injects secrets and the rollout nonce — not URLs:
-#   $DB_PASSWORD, $SYSTEM_EMAIL, $SMTP_PASSWORD, $SMTP_AUTH, ${GITHUB_RUN_ID}
+#   $DB_PASSWORD, $SYSTEM_EMAIL, $NO_REPLY_EMAIL, $SMTP_PASSWORD, $SMTP_AUTH, ${GITHUB_RUN_ID}
 # Local render:
-#   export DB_PASSWORD=... GITHUB_RUN_ID=manual-1 SYSTEM_EMAIL=... SMTP_PASSWORD=... SMTP_AUTH=
-#   envsubst '$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $SMTP_PASSWORD $SMTP_AUTH' < ops/demo-deploy.tmpl.yaml > ops/demo-deploy.yaml
+#   export DB_PASSWORD=... GITHUB_RUN_ID=manual-1 SYSTEM_EMAIL=... NO_REPLY_EMAIL=... SMTP_PASSWORD=... SMTP_AUTH=
+#   envsubst '$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $NO_REPLY_EMAIL $SMTP_PASSWORD $SMTP_AUTH' < ops/demo-deploy.tmpl.yaml > ops/demo-deploy.yaml
 #
 # Before first deploy: ConfigMap **dataverse-solr-conf** must ship Solr 9 conf (full tree or solr-conf.tgz),
 # same lineage as docker-compose (IQSS conf under repo **config/** — see **docs/DEPLOYMENT.md**).
@@ -264,7 +264,7 @@ extraEnvVars:
   # no_reply_email → Payara JavaMail --fromaddress (outbound From). No separate Reply-To in the session;
   # mail clients reply to From when Reply-To is absent, so use support@ for both behaviors.
   - name: system_email
-    value: "${SYSTEM_EMAIL}"
+    value: "support@notch8.com"
   - name: mailhost
     value: "smtp.sendgrid.net"
   - name: mailuser
@@ -278,7 +278,7 @@ extraEnvVars:
   - name: socket_port
     value: "587"
   - name: smtp_auth
-    value: "${SMTP_AUTH}"
+    value: "true"
   - name: smtp_starttls
     value: "true"
   - name: smtp_type
