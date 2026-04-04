@@ -165,7 +165,7 @@ For **demo**, SMTP host, ports, auth flags, and **`support@notch8.com`** address
 
 1. **Chart:** set **`mail.enabled: true`** so **`010-mailrelay-set.sh`** is in the ConfigMap. Pod env must include the names the script reads: **`system_email`**, **`mailhost`**, **`mailuser`**, **`no_reply_email`**, **`smtp_password`**, **`smtp_port`**, **`socket_port`**, **`smtp_auth`**, **`smtp_starttls`**, **`smtp_type`**, **`smtp_enabled`** (see **`ops/demo-deploy.tmpl.yaml`** and **`scripts/init.d/010-mailrelay-set.sh`**). **`smtp_enabled`** must not be `false` / `0` / `no`, and **`system_email`** must be non-empty or the script no-ops.
 
-2. **GitHub Environment (demo):** Add **Secret** **`SMTP_PASSWORD`** (SendGrid API key). **`system_email`** and **`no_reply_email`** are set to **`support@notch8.com`** in **`ops/demo-deploy.tmpl.yaml`**. Redeploy so a **new pod** runs init (the script uses **`asadmin create-javamail-resource`** on boot).
+2. **GitHub Environment (demo):** Add **Secret** **`SMTP_PASSWORD`** (SendGrid API key). **`ops/demo-deploy.tmpl.yaml`** sets **`DATAVERSE_MAIL_SYSTEM_EMAIL`** / **`DATAVERSE_MAIL_SUPPORT_EMAIL`** to **`support@notch8.com`** and **`DATAVERSE_MAIL_MTA_*`** for SendGrid (587 + STARTTLS + **`apikey`** user). Since **Dataverse 6.2+**, outbound mail uses these **MicroProfile** settings ([SMTP/Email in the Dataverse Guide](https://guides.dataverse.org/en/latest/installation/config.html#smtp-email-configuration)); **`010-mailrelay-set.sh`** (Payara JavaMail + `:SystemEmail`) is **not sufficient alone**. Set **`DATAVERSE_MAIL_DEBUG`** to **`true`** in the template temporarily for verbose mail logs ([`dataverse.mail.debug`](https://guides.dataverse.org/en/latest/installation/config.html)). **Restart pods** after changing mail env (MTA session is cached).
 
 3. **Verify config:** After the pod is ready, check the setting: `curl -sS "https://<your-host>/api/admin/settings/:SystemEmail"` (use a superuser API token if the endpoint requires auth on your version). In the UI, use **Contact** / support mail, **Forgot password**, or user signup (if enabled) and confirm delivery (and provider dashboard / spam folder).
 
@@ -184,6 +184,12 @@ For **demo**, SMTP host, ports, auth flags, and **`support@notch8.com`** address
      `/opt/payara/appserver/glassfish/domains/domain1/logs/server.log`  
      Or discover: `find /opt/payara -name server.log 2>/dev/null`. Much application output also goes to **`kubectl logs`** on the main container (`dataverseup`).
    - **Network:** from the pod, `nc -zv smtp.sendgrid.net 587` (or your `mailhost`) must succeed if the cluster egress allows it.
+
+7. **Why you don’t see Rails-style “Sent mail” lines:** **ActionMailer** logs each delivery at INFO by default. **Dataverse 6.2+** uses **`dataverse.mail.*`** / **`DATAVERSE_MAIL_*`**; with **`DATAVERSE_MAIL_DEBUG=true`** you get the **supported** verbose logging described in the [installation guide](https://guides.dataverse.org/en/latest/installation/config.html#smtp-email-configuration) (set in **`ops/demo-deploy.tmpl.yaml`**, then roll pods — **disable after debugging**).
+
+   **Lower-level JavaMail trace (optional):** `-Dmail.debug=true` on **`JVM_OPTS`** still works for raw SMTP wire logs but can leak credentials; prefer **`DATAVERSE_MAIL_DEBUG`** first.
+
+   **Closest thing to a delivery log:** **[SendGrid Activity](https://app.sendgrid.com/email_activity)** (accept / bounce / block).
 
 ### Ingress and TLS
 

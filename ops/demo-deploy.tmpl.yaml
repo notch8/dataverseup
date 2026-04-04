@@ -231,6 +231,27 @@ extraEnvVars:
     value: "demo-dataverseup"
   - name: JVM_OPTS
     value: "-Xmx2g -Xms2g"
+  # Dataverse 6.2+ sends mail via MicroProfile dataverse.mail.* (env DATAVERSE_MAIL_*), not only :SystemEmail /
+  # Payara JavaMail. Without these, verification/password mail may never send. See:
+  # https://guides.dataverse.org/en/latest/installation/config.html#smtp-email-configuration
+  - name: DATAVERSE_MAIL_SYSTEM_EMAIL
+    value: "support@notch8.com"
+  - name: DATAVERSE_MAIL_SUPPORT_EMAIL
+    value: "support@notch8.com"
+  - name: DATAVERSE_MAIL_DEBUG
+    value: "false"
+  - name: DATAVERSE_MAIL_MTA_HOST
+    value: "smtp.sendgrid.net"
+  - name: DATAVERSE_MAIL_MTA_PORT
+    value: "587"
+  - name: DATAVERSE_MAIL_MTA_AUTH
+    value: "true"
+  - name: DATAVERSE_MAIL_MTA_USER
+    value: "apikey"
+  - name: DATAVERSE_MAIL_MTA_PASSWORD
+    value: "${SMTP_PASSWORD}"
+  - name: DATAVERSE_MAIL_MTA_STARTTLS_ENABLE
+    value: "true"
   - name: DATAVERSE_PID_PROVIDERS
     value: demo
   - name: DATAVERSE_PID_DEFAULT_PROVIDER
