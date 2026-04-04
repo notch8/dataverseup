@@ -42,17 +42,25 @@ if [ -n "${FOOTER_COPYRIGHT:-}" ]; then
   esac
 fi
 
+# Path segment must be URL-encoded (at least ':') so proxies like nginx do not mishandle
+# /api/admin/settings/:LogoCustomizationFile as a bogus port or split path.
+admin_setting_path() {
+  printf '%s' "$1" | sed -e 's/%/%25/g' -e 's/:/%3A/g' -e 's/ /%20/g'
+}
+
 curl_put_setting() {
   _name="$1"
   _val="$2"
   if [ -z "$_val" ]; then
     return 0
   fi
+  _path_seg=$(admin_setting_path "$_name")
   printf '%s' "apply-branding: PUT ${_name}\n" >&2
-  _code=$(curl -sS -o /dev/null -w "%{http_code}" -X PUT \
+  _code=$(curl -sS -g -o /dev/null -w "%{http_code}" -X PUT \
     -H "X-Dataverse-key: ${TOKEN}" \
+    -H "Content-Type: text/plain; charset=UTF-8" \
     --data-binary "$_val" \
-    "${API}/admin/settings/${_name}")
+    "${API}/admin/settings/${_path_seg}")
   if [ "$_code" != "200" ] && [ "$_code" != "204" ]; then
     echo "apply-branding: WARNING ${_name} -> HTTP ${_code} (check admin user API token in secrets/api/key)" >&2
   fi
