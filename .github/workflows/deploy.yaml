@@ -42,19 +42,8 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      # Optional mail — secrets + Environment variables (see ops/demo-deploy.tmpl.yaml header).
-      SYSTEM_EMAIL: ${{ secrets.SYSTEM_EMAIL }}
-      NO_REPLY_EMAIL: ${{ secrets.NO_REPLY_EMAIL }}
+      # Mail: SendGrid API key only — host/ports/From/support address are literals in ops/<env>-deploy.tmpl.yaml.
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-      SMTP_ADDRESS: ${{ vars.SMTP_ADDRESS }}
-      SMTP_USER_NAME: ${{ vars.SMTP_USER_NAME }}
-      SMTP_PORT: ${{ vars.SMTP_PORT }}
-      SOCKET_PORT: ${{ vars.SOCKET_PORT }}
-      SMTP_AUTH: ${{ vars.SMTP_AUTH }}
-      SMTP_STARTTLS: ${{ vars.SMTP_STARTTLS }}
-      SMTP_TYPE: ${{ vars.SMTP_TYPE }}
-      SMTP_ENABLED: ${{ vars.SMTP_ENABLED }}
-      SMTP_DOMAIN: ${{ vars.SMTP_DOMAIN }}
       DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
       HELM_RELEASE_NAME: ${{ inputs.k8s_release_name || format('{0}-{1}', inputs.environment, github.event.repository.name) }}
       HELM_NAMESPACE: ${{ inputs.k8s_namespace || format('{0}-{1}', inputs.environment, github.event.repository.name) }}
@@ -93,13 +82,8 @@ jobs:
           TMPL="ops/${DEPLOY_ENVIRONMENT}-deploy.tmpl.yaml"
           OUT="ops/${DEPLOY_ENVIRONMENT}-deploy.yaml"
           echo "$KUBECONFIG_FILE" | base64 -d >"$KUBECONFIG"
-          export SMTP_PORT="${SMTP_PORT:-25}"
-          export SOCKET_PORT="${SOCKET_PORT:-${SMTP_PORT}}"
-          if [ -z "${NO_REPLY_EMAIL:-}" ] && [ -n "${SMTP_DOMAIN:-}" ]; then
-            export NO_REPLY_EMAIL="noreply@${SMTP_DOMAIN}"
-          fi
-          # Only secrets + rollout id — hosts, Solr DNS, ingress, and bucket are literals in the *.tmpl.yaml file.
-          ENVSUBST_VARS='$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $NO_REPLY_EMAIL $SMTP_PASSWORD $SMTP_AUTH'
+          # envsubst: only secrets + rollout id. Everything else (SMTP host, ports, From, URLs, Solr, …) is literals in the *.tmpl.yaml file.
+          ENVSUBST_VARS='$GITHUB_RUN_ID $DB_PASSWORD $SMTP_PASSWORD'
           envsubst "$ENVSUBST_VARS" <"$TMPL" >"$OUT"
 
       - name: Solr conf ConfigMap (pre-Helm)

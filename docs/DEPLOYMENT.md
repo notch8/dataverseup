@@ -141,9 +141,9 @@ Compose only copies **`schema.xml`** and **`solrconfig.xml`** into the core afte
 
 ### GitHub Actions — Deploy workflow
 
-The **[.github/workflows/deploy.yaml](../.github/workflows/deploy.yaml)** job uses the GitHub **Environment** named by the `environment` workflow input (e.g. `demo`). It must match **`ops/<environment>-deploy.tmpl.yaml`**. The **Prepare kubeconfig and render deploy values** step runs **`envsubst` only for selected secrets** (`DB_PASSWORD`, `SYSTEM_EMAIL`, `NO_REPLY_EMAIL`, `SMTP_PASSWORD`, `SMTP_AUTH`) and **`GITHUB_RUN_ID`**. **Public URLs, ingress, in-cluster Solr/Dataverse Service DNS, S3 bucket name, and Postgres identifiers are plain literals** in that file — edit them there when the environment changes (they must match your Helm release/namespace, e.g. `demo-dataverseup`).
+The **[.github/workflows/deploy.yaml](../.github/workflows/deploy.yaml)** job uses the GitHub **Environment** named by the `environment` workflow input (e.g. `demo`). It must match **`ops/<environment>-deploy.tmpl.yaml`**. The **Prepare kubeconfig and render deploy values** step runs **`envsubst` only for selected secrets** (`DB_PASSWORD`, `SMTP_PASSWORD`) and **`GITHUB_RUN_ID`**. **Public URLs, ingress, in-cluster Solr/Dataverse Service DNS, `:SystemEmail` / JavaMail From addresses (demo: both `support@notch8.com`), S3 bucket name, and Postgres identifiers are plain literals** in that file — edit them there when the environment changes (they must match your Helm release/namespace, e.g. `demo-dataverseup`).
 
-**Secrets (typical, per Environment):** `DB_PASSWORD`, `KUBECONFIG_FILE` (base64), optional mail: `SYSTEM_EMAIL`, `NO_REPLY_EMAIL`, `SMTP_PASSWORD`.
+**Secrets (typical, per Environment):** `DB_PASSWORD`, `KUBECONFIG_FILE` (base64), optional mail: **`SMTP_PASSWORD`** (SendGrid API key for demo). Demo values fix **`system_email`** and **`no_reply_email`** to **`support@notch8.com`** in **`ops/demo-deploy.tmpl.yaml`** (no `SYSTEM_EMAIL` / `NO_REPLY_EMAIL` secrets required).
 
 **Repository or Environment variables (optional):**
 
@@ -154,13 +154,10 @@ The **[.github/workflows/deploy.yaml](../.github/workflows/deploy.yaml)** job us
 | `HELM_APP_NAME` | `app.kubernetes.io/name` for `kubectl rollout status` | `github.event.repository.name` |
 | `DEPLOY_ROLLOUT_TIMEOUT` | Rollout wait | `10m` |
 | `DEPLOY_BOOTSTRAP_JOB_TIMEOUT` | Bootstrap Job wait | `25m` |
-| `SMTP_ADDRESS` | Host for `mailhost` in values (e.g. SendGrid) | (use literals in `ops/*-deploy.tmpl.yaml` if not set) |
-| `SMTP_USER_NAME` | `mailuser` (e.g. `apikey` for SendGrid) | |
-| `SMTP_PORT` / `SOCKET_PORT` | Ports for JavaMail | workflow defaults `SMTP_PORT` to `25` if unset |
-| `SMTP_AUTH` | Must be `true` for authenticated SMTP (injected by `envsubst` into `smtp_auth`) | |
-| `SMTP_STARTTLS`, `SMTP_TYPE`, `SMTP_ENABLED`, `SMTP_DOMAIN` | Passed through to job env; if `NO_REPLY_EMAIL` is empty but `SMTP_DOMAIN` is set, the workflow sets `NO_REPLY_EMAIL=noreply@$SMTP_DOMAIN` before `envsubst` | |
 
 Default Helm **release** and **namespace** are **`<environment>-<repository.name>`** (e.g. `demo-dataverseup`). Override with workflow inputs `k8s_release_name` / `k8s_namespace` when needed.
+
+For **demo**, SMTP host, ports, auth flags, and **`support@notch8.com`** addresses live only in **`ops/demo-deploy.tmpl.yaml`** — the workflow does **not** pass GitHub Variables for those; change the template (or add `${VAR}` placeholders and extend `envsubst`) if you need per-environment overrides.
 
 **Migrating or renaming a release:** Update the literals in **`ops/<environment>-deploy.tmpl.yaml`** (ingress hosts, `dataverse_*` / `DATAVERSE_*` / `hostname`, `solrHttpBase`, `SOLR_*`, `DATAVERSE_URL`, `awsS3.bucketName`, DB names, etc.) so they match the new Helm release and namespace; then align Postgres, S3, TLS, and running workloads.
 
@@ -168,13 +165,25 @@ Default Helm **release** and **namespace** are **`<environment>-<repository.name
 
 1. **Chart:** set **`mail.enabled: true`** so **`010-mailrelay-set.sh`** is in the ConfigMap. Pod env must include the names the script reads: **`system_email`**, **`mailhost`**, **`mailuser`**, **`no_reply_email`**, **`smtp_password`**, **`smtp_port`**, **`socket_port`**, **`smtp_auth`**, **`smtp_starttls`**, **`smtp_type`**, **`smtp_enabled`** (see **`ops/demo-deploy.tmpl.yaml`** and **`scripts/init.d/010-mailrelay-set.sh`**). **`smtp_enabled`** must not be `false` / `0` / `no`, and **`system_email`** must be non-empty or the script no-ops.
 
-2. **GitHub Environment (demo):** Add **Secrets** — `SMTP_PASSWORD` (SendGrid API key or provider password), `SYSTEM_EMAIL` (installation support address; `:SystemEmail`), `NO_REPLY_EMAIL` (JavaMail **From** / `no_reply_email`). Optionally set **Variables** (`SMTP_ADDRESS`, `SMTP_USER_NAME`, `SMTP_PORT`, `SMTP_AUTH=true`, etc.) if you do not want them as literals in the template. Redeploy so a **new pod** runs init (the script uses **`asadmin create-javamail-resource`** on boot).
+2. **GitHub Environment (demo):** Add **Secret** **`SMTP_PASSWORD`** (SendGrid API key). **`system_email`** and **`no_reply_email`** are set to **`support@notch8.com`** in **`ops/demo-deploy.tmpl.yaml`**. Redeploy so a **new pod** runs init (the script uses **`asadmin create-javamail-resource`** on boot).
 
 3. **Verify config:** After the pod is ready, check the setting: `curl -sS "https://<your-host>/api/admin/settings/:SystemEmail"` (use a superuser API token if the endpoint requires auth on your version). In the UI, use **Contact** / support mail, **Forgot password**, or user signup (if enabled) and confirm delivery (and provider dashboard / spam folder).
 
 4. **Logs:** `kubectl logs -n <ns> deploy/<release>-dataverseup` (or your deployment name) and look for **`010-mailrelay`** / **`asadmin`** errors during startup.
 
 5. **Docker Compose (local):** Set the same variable names in **`.env`** (see **`.env.example`** SMTP block). They are passed through on the **dataverse** service. Restart **dataverse** and tail **`docker compose logs -f dataverse`** during Payara init.
+
+6. **If the UI says the message was sent but nothing arrives:**
+   - **`010-mailrelay-set.sh` runs only when Payara starts.** Changing `SMTP_PASSWORD` in GitHub without **rolling/restarting** Dataverse pods leaves the old JavaMail session (or none). After fixing secrets, **redeploy or delete pods** so init runs again.
+   - **Confirm rendered values:** open the generated `ops/<env>-deploy.yaml` (CI artifact or run `envsubst` locally) and check `smtp_password` is non-empty (not the literal `${SMTP_PASSWORD}`) and `system_email` / `no_reply_email` are **`support@notch8.com`** for demo.
+   - **SendGrid:** use the **full API key** as `SMTP_PASSWORD`, **`mailuser` = `apikey`**, port **587**, **`smtp_auth` / `smtp_type`** as in **`ops/demo-deploy.tmpl.yaml`**. In [SendGrid Activity](https://app.sendgrid.com/email_activity), see bounces, blocks, and “unauthenticated” sends. **Verify** the **From** address (`no_reply_email`) via Single Sender or domain authentication.
+   - **Payara:** successful sends often log **nothing** at default levels. Exec into the Dataverse container and run:  
+     `asadmin --user "$ADMIN_USER" --passwordfile "$PASSWORD_FILE" list-javamail-resources`  
+     You should see **`mail/notifyMailSession`**. If it is missing, init did not configure mail (wrong env, `smtp_enabled`, or script failed).  
+     **Domain logs (GDCC base image):** Payara lives under **`/opt/payara/appserver`**, not `/opt/payara/glassfish` alone. Typical file:  
+     `/opt/payara/appserver/glassfish/domains/domain1/logs/server.log`  
+     Or discover: `find /opt/payara -name server.log 2>/dev/null`. Much application output also goes to **`kubectl logs`** on the main container (`dataverseup`).
+   - **Network:** from the pod, `nc -zv smtp.sendgrid.net 587` (or your `mailhost`) must succeed if the cluster egress allows it.
 
 ### Ingress and TLS
 
