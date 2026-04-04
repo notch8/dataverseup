@@ -19,12 +19,12 @@ data:
   {{- toYaml .Values.configMap.data | nindent 2 }}
   {{- end }}
   {{- if .Values.mail.enabled }}
-  {{- $mailScript := .Files.Get "files/010-mailrelay-set.sh" | trim }}
+  {{- $mailScript := .Files.Get "files/init.d/010-mailrelay-set.sh" | trim }}
   010-mailrelay-set.sh: |
 {{- $mailScript | nindent 4 }}
   {{- end }}
   {{- if .Values.awsS3.enabled }}
-  {{- $s3Script := .Files.Get "files/006-s3-aws-storage.sh" | trim }}
+  {{- $s3Script := .Files.Get "files/init.d/006-s3-aws-storage.sh" | trim }}
   006-s3-aws-storage.sh: |
 {{- $s3Script | nindent 4 }}
   {{- end }}

@@ -265,7 +265,7 @@ solrInit:
   resources: {}
 
 # AWS S3 file storage: Secret mount + env (aws_bucket_name, …) plus bundled 006-s3-aws-storage.sh mounted at
-# /opt/payara/scripts/init.d/ (base image entrypoint runs that path before Payara starts). See docs/HELM.md.
+# /opt/payara/scripts/init.d/ (base image entrypoint runs that path before Payara starts). See docs/DEPLOYMENT.md.
 awsS3:
   enabled: false
   # Name of a Secret you create out-of-band (keys = secretKeys below). Required when enabled.

@@ -75,7 +75,7 @@ data:
       POD_NS=""
       if [[ -r /var/run/secrets/kubernetes.io/serviceaccount/namespace ]]; then
         POD_NS=$(tr -d '\n' < /var/run/secrets/kubernetes.io/serviceaccount/namespace)
-        echo "solr-init: fix: rebuild ConfigMap from full Solr conf directory for your Dataverse version (see docs/HELM.md)." >&2
+        echo "solr-init: fix: rebuild ConfigMap from full Solr conf directory for your Dataverse version (see docs/DEPLOYMENT.md)." >&2
       else
         echo "solr-init: fix: rebuild ConfigMap from full Solr conf directory (namespace in kubectl context)." >&2
       fi
@@ -88,7 +88,7 @@ data:
       UPLOAD_DIR="${STAGING}/conf"
     else
       echo "solr-init: missing solrconfig.xml — ConfigMap must be the full Dataverse Solr conf directory, not schema.xml only." >&2
-      echo "solr-init: See https://guides.dataverse.org/en/latest/installation/prerequisites.html#solr and docs/HELM.md" >&2
+      echo "solr-init: See https://guides.dataverse.org/en/latest/installation/prerequisites.html#solr and docs/DEPLOYMENT.md" >&2
       echo "solr-init: Example: package conf dir as solr-conf.tgz ConfigMap keys (schema.xml, solrconfig.xml, lang/, …)." >&2
       echo "solr-init: Staged files under ${STAGING}:" >&2
       find "${STAGING}" -type f 2>/dev/null | sort >&2 || ls -laR "${STAGING}" >&2 || true

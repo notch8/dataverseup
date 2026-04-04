@@ -11,7 +11,7 @@
 #   envsubst '$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $SMTP_PASSWORD $SMTP_AUTH' < ops/demo-deploy.tmpl.yaml > ops/demo-deploy.yaml
 #
 # Before first deploy: ConfigMap **dataverse-solr-conf** must ship Solr 9 conf (full tree or solr-conf.tgz),
-# same lineage as docker-compose (IQSS conf under repo **config/** — see **docs/HELM.md**).
+# same lineage as docker-compose (IQSS conf under repo **config/** — see **docs/DEPLOYMENT.md**).
 #
 # With **awsS3.enabled**, create a **generic** Secret in the release namespace **before** Helm installs pods that
 # mount it. The chart mounts it as AWS CLI files under `/secrets/aws-cli/.aws/`.
@@ -43,7 +43,7 @@
 #   # C) STS / assumed-role: add `aws_session_token = ...` under the same profile in the credentials file body.
 #
 # After creating or rotating the Secret, restart the Dataverse Deployment so the volume remounts.
-# Full detail: **docs/HELM.md** (S3 file storage).
+# Full detail: **docs/DEPLOYMENT.md** (S3 file storage).
 
 awsS3:
   enabled: true

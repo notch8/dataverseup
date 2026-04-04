@@ -49,8 +49,7 @@ Notch8's **ops wrapper** around stock **[Dataverse](https://dataverse.org/)** (G
 ## Kubernetes (Helm)
 
 - **Chart:** `charts/dataverseup` — see **[charts/dataverseup/README.md](charts/dataverseup/README.md)** for a feature summary and `helm` commands.
-- **Runbook-style notes:** **[docs/HELM.md](docs/HELM.md)** (prereqs, Secrets, optional internal Solr, S3, bootstrap modes, smoke checks).
-- **Install helper:** from the repo root, `./bin/helm_deploy RELEASE_NAME NAMESPACE` (optional `HELM_EXTRA_ARGS` for values files and timeouts). Same details are in `docs/HELM.md`.
+- **Runbook:** **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — Helm (prereqs, Secrets, Solr, S3, bootstrap), GitHub Actions deploy, `./bin/helm_deploy`, smoke tests, upgrades.
 
 Compose remains the default path for local/lab; Helm reuses the same **`init.d/`** scripts (via chart symlinks under `charts/dataverseup/files/`) where applicable.
 
@@ -70,9 +69,8 @@ Compose remains the default path for local/lab; Helm reuses the same **`init.d/`
 | `scripts/` | Bootstrap, branding, seed entrypoints, `apply-branding.sh`, `solr-initdb/` |
 | `triggers/` | Postgres notify + optional webhook script (see **`WEBHOOK`** in `.env.example`) |
 | `charts/dataverseup/` | Helm chart for Dataverse on Kubernetes (optional Solr, bootstrap Job, S3, Ingress, …) |
-| `bin/helm_deploy` | Wrapper around `helm upgrade --install` with sane defaults (see **`docs/HELM.md`**) |
-| `docs/HELM.md` | Helm install notes, values, and operational gotchas |
-| `docs/DEPLOYMENT.md` | **Working deployment notes + learnings** (add in-repo when you maintain runbooks) |
+| `bin/helm_deploy` | Wrapper around `helm upgrade --install` with sane defaults (see **`docs/DEPLOYMENT.md`**) |
+| `docs/DEPLOYMENT.md` | **Deployment runbook:** Helm/Kubernetes, optional GitHub Actions, Compose pointer, learnings log |
 
 ## Version pin
 
