@@ -50,7 +50,8 @@ awsS3:
   # Kubernetes Secret you create out-of-band (see comments above).
   existingSecret: "aws-s3-credentials"
   bucketName: "demo-dataverseup"
-  endpointUrl: "https://s3.us-west-2.amazonaws.com"
+  # Empty for Amazon S3 — do not set a regional s3.*.amazonaws.com URL here; it breaks SDK uploads. Use endpointUrl only for MinIO / compatible stores.
+  endpointUrl: ""
   region: us-west-2
   # Must match the profile section in mounted .aws/credentials (e.g. [default]); override in values if needed.
   profile: default

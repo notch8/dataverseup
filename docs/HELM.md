@@ -137,7 +137,7 @@ Set **`initdFromChart.enabled: true`** in values to include **all** `files/init.
 
 ## S3 file storage
 
-1. Set `awsS3.enabled: true`, `awsS3.existingSecret`, `bucketName`, `endpointUrl`, `region`, and `profile` in values. The IAM principal behind the Secret needs S3 access to that bucket.
+1. Set `awsS3.enabled: true`, `awsS3.existingSecret`, `bucketName`, `region`, and `profile` in values. The IAM principal behind the Secret needs S3 access to that bucket. For **Amazon S3**, leave **`endpointUrl` empty** so Payara’s init script does not set `custom-endpoint-url` (a regional `https://s3….amazonaws.com` URL there commonly causes upload failures). Set **`endpointUrl` only** for MinIO or other S3-compatible endpoints.
 
 2. Create a **generic** Secret in the **same namespace** as the Helm release, **before** pods that mount it start. Key names must match `awsS3.secretKeys` (defaults below): the values are the **raw file contents** of `~/.aws/credentials` and `~/.aws/config`.
 
@@ -175,6 +175,17 @@ Set **`initdFromChart.enabled: true`** in values to include **all** `files/init.
 4. After creating or updating the Secret, **restart** the Dataverse Deployment (or delete its pods) so the volume is remounted. The chart sets `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE` to the mounted paths.
 
 **Note:** The Java AWS SDK inside the app may not perform the same **assume-role chaining** as the AWS CLI from a complex `config` file. Prefer putting **direct** user keys or **already-assumed** temporary keys in the Secret for the app, or use EKS **IRSA** (service account + role) instead of long-lived keys if your platform supports it.
+
+### Troubleshooting: `Failed to save the content of the uploaded file`
+
+The Native API returns **HTTP 400** with that message when the request reached Dataverse but **writing to the configured store failed**. This is not a bug in the seed script’s `jsonData` shape.
+
+With **`dataverse.files.storage-driver-id=S3`** (see `init.d/006-s3-aws-storage.sh`):
+
+1. **IAM** — The principal in your `aws-s3-credentials` Secret needs at least **`s3:PutObject`**, **`s3:GetObject`**, **`s3:DeleteObject`**, and **`s3:ListBucket`** on the target bucket (and prefixes Dataverse uses). Missing `PutObject` often surfaces exactly as this generic message; the real error is in server logs.
+2. **Bucket and region** — `awsS3.bucketName` and `awsS3.region` must match the bucket. For **Amazon S3**, keep **`awsS3.endpointUrl` empty**; do not point it at `https://s3.<region>.amazonaws.com` unless you are on a non-AWS S3-compatible store.
+3. **Credentials mounted** — After creating or rotating the Secret, **restart** Dataverse pods so `AWS_SHARED_CREDENTIALS_FILE` / `AWS_CONFIG_FILE` point at the new files.
+4. **Logs** — Check the Dataverse Deployment pod logs for nested exceptions (`AccessDenied`, `NoSuchBucket`, SSL, etc.).
 
 ## Upgrades
 

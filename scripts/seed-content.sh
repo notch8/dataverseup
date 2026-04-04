@@ -113,6 +113,13 @@ upload_file() {
     *)
       echo "seed-content: upload $(basename "$_path") failed HTTP ${_code}" >&2
       printf '%s\n' "$_body" >&2
+      case "$_body" in
+        *Failed*to*save*the*content*)
+          echo "seed-content: hint: Dataverse accepted the upload but could not write to file storage." >&2
+          echo "seed-content: hint: With awsS3.enabled, check IAM (s3:PutObject/GetObject/DeleteObject/ListBucket on the bucket), bucket name/region vs values, and that pods were restarted after creating aws-s3-credentials. See docs/HELM.md (S3 troubleshooting)." >&2
+          echo "seed-content: hint: Inspect the Dataverse pod logs for AWS SDK errors (AccessDenied, NoSuchBucket, etc.)." >&2
+          ;;
+      esac
       exit 1
       ;;
   esac
