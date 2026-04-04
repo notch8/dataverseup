@@ -147,6 +147,7 @@ jobs:
             --show-only templates/bootstrap-job.yaml \
             --set bootstrapJob.enabled=true \
             --set bootstrapJob.helmHook=false \
+            --set bootstrapJob.mode=compose \
             >"$OUT"
           JOB="$(awk '/^kind: Job$/{j=1} j && /^  name: /{print $2; exit}' "$OUT")"
           if [ -z "$JOB" ]; then
