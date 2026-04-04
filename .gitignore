@@ -13,4 +13,3 @@ data/
 /docroot/
 *.war
 .idea/
-test-k3d-deploy
