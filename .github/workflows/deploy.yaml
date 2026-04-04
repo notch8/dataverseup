@@ -27,7 +27,7 @@ on:
         required: false
         type: string
       run_bootstrap_job:
-        description: Re-run the bootstrap Job (helmHook=false) — same manifest as chart templates/bootstrap-job.yaml; use if the post-install hook was skipped or you reset Postgres. Chart default mode is oneShot (configbaker bootstrap.sh dev). Deletes the prior Job by name first.
+        description: Re-run the bootstrap Job (helmHook=false, compose). Requires Secret dataverse-admin-api-token (key token) in the namespace when the instance is already bootstrapped — see ops/*-deploy.tmpl.yaml bootstrapJob.compose.existingAdminApiTokenSecret. Deletes the prior Job by name first.
         required: false
         type: boolean
         default: false
@@ -144,6 +144,7 @@ jobs:
           helm template "$HELM_RELEASE_NAME" "$HELM_CHART_PATH" \
             --namespace "$HELM_NAMESPACE" \
             $HELM_EXTRA_ARGS \
+            --show-only templates/bootstrap-chain-configmap.yaml \
             --show-only templates/bootstrap-job.yaml \
             --set bootstrapJob.enabled=true \
             --set bootstrapJob.helmHook=false \

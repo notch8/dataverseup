@@ -291,6 +291,10 @@ extraEnvVars:
 # Re-apply branding after changing **branding/**: use workflow "Run bootstrap job" with hook disabled, or
 # **postUpgradeBrandingSeedJob** + admin API token Secret (see **charts/dataverseup/values.yaml**).
 # If you wiped Postgres later, use GitHub Deploy → "Run bootstrap job" or apply a Job by hand.
+#
+# When Dataverse is **already bootstrapped**, configbaker skips and does not write **API_TOKEN** — the chain then
+# needs a long-lived superuser API token from a Secret (same as post-upgrade branding job):
+#   kubectl -n demo-dataverseup create secret generic dataverse-admin-api-token --from-literal=token=YOUR_UUID
 bootstrapJob:
   enabled: true
   mode: compose
@@ -300,3 +304,5 @@ bootstrapJob:
     waitMaxSeconds: 900
     waitSleepSeconds: 5
     seed: true
+    existingAdminApiTokenSecret: dataverse-admin-api-token
+    adminApiTokenSecretKey: token

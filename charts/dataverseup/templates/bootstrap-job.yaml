@@ -53,6 +53,13 @@ spec:
               value: "/config/branding.env"
             - name: TIMEOUT
               value: {{ .Values.bootstrapJob.timeout | quote }}
+            {{- if .Values.bootstrapJob.compose.existingAdminApiTokenSecret }}
+            - name: DATAVERSE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.bootstrapJob.compose.existingAdminApiTokenSecret | quote }}
+                  key: {{ .Values.bootstrapJob.compose.adminApiTokenSecretKey | default "token" | quote }}
+            {{- end }}
           volumeMounts:
             - name: bootstrap-scripts
               mountPath: /bootstrap-chain

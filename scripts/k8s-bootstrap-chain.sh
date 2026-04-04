@@ -70,13 +70,28 @@ else
   fi
   "${CONFIGBAKER_BOOTSTRAP}" -e "${TOKEN_FILE}" dev
 
+  # Kubernetes may inject DATAVERSE_API_TOKEN via secretKeyRef; configbaker's bootstrap.env can still
+  # assign empty vars — sourcing must not wipe that token.
+  DATAVERSE_API_TOKEN_PRE_SOURCE="${DATAVERSE_API_TOKEN:-}"
+
   # shellcheck disable=SC1090
-  source "${TOKEN_FILE}"
-  if [[ -z "${API_TOKEN:-}" ]]; then
-    echo "k8s-bootstrap-chain: no API_TOKEN in ${TOKEN_FILE} after bootstrap" >&2
+  set +e
+  [[ -f "${TOKEN_FILE}" ]] && source "${TOKEN_FILE}"
+  set -e
+
+  if [[ -n "${API_TOKEN:-}" ]]; then
+    write_api_key_from_token "${API_TOKEN}"
+  elif [[ -n "${DATAVERSE_API_TOKEN:-}" ]]; then
+    echo "k8s-bootstrap-chain: no API_TOKEN in ${TOKEN_FILE} (configbaker often skips when already bootstrapped); using DATAVERSE_API_TOKEN from environment" >&2
+    write_api_key_from_token "${DATAVERSE_API_TOKEN}"
+  elif [[ -n "${DATAVERSE_API_TOKEN_PRE_SOURCE:-}" ]]; then
+    echo "k8s-bootstrap-chain: no API_TOKEN in ${TOKEN_FILE}; bootstrap.env cleared DATAVERSE_API_TOKEN — using token from environment (e.g. Secret) before source" >&2
+    write_api_key_from_token "${DATAVERSE_API_TOKEN_PRE_SOURCE}"
+  else
+    echo "k8s-bootstrap-chain: no API_TOKEN after bootstrap and no DATAVERSE_API_TOKEN in environment." >&2
+    echo "k8s-bootstrap-chain: fix: create a Secret with a superuser API token and set bootstrapJob.compose.existingAdminApiTokenSecret in Helm values (see ops/demo-deploy.tmpl.yaml), or run with BOOTSTRAP_CHAIN_SKIP_BOOTSTRAP=1 and DATAVERSE_API_TOKEN." >&2
     exit 2
   fi
-  write_api_key_from_token "${API_TOKEN}"
 fi
 
 export BRANDING_ENV_PATH="${BRANDING_ENV_PATH:-/config/branding.env}"

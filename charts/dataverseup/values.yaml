@@ -308,6 +308,11 @@ bootstrapJob:
     waitSleepSeconds: 5
     # Run fixtures/seed after branding (set false for bootstrap+branding only).
     seed: true
+    # When the DB is already bootstrapped, configbaker prints "skipping" and may not write API_TOKEN to the file.
+    # For CI "re-run bootstrap job" / branding+seed, create a Secret with a superuser API token and set the name:
+    #   kubectl create secret generic dataverse-admin-api-token -n YOUR_NS --from-literal=token=UUID
+    existingAdminApiTokenSecret: ""
+    adminApiTokenSecretKey: token
     # post-upgrade hook: branding + seed only (no configbaker). Use when the release was upgraded and the
     # post-install hook never ran compose, or you need to re-apply after changing branding/fixtures in the chart.
     # Create a Secret first, e.g. kubectl create secret generic dv-admin-api-token -n ns --from-literal=token=UUID
