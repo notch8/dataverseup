@@ -1,1 +1,1 @@
-../../../../init.d/03-doi-set.sh
+../../../../scripts/init.d/03-doi-set.sh

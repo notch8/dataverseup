@@ -1,1 +1,1 @@
-../../../../init.d/011-local-storage.sh
+../../../../scripts/init.d/011-local-storage.sh

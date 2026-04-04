@@ -62,24 +62,11 @@ spec:
                   optional: true
             {{- end }}
           volumeMounts:
-            - name: bootstrap-scripts
-              mountPath: /bootstrap-chain
-              readOnly: true
-            - name: bootstrap-work
-              mountPath: /work
-            - name: branding-env
-              mountPath: /config
-              readOnly: true
-            - name: seed-flat
-              mountPath: /seed-flat
-              readOnly: true
+{{ include "dataverseup.bootstrapComposeVolumeMounts" . | nindent 12 }}
           {{- else }}
           command: {{- toYaml .Values.bootstrapJob.command | nindent 12 }}
           env:
-            - name: DATAVERSE_URL
-              value: {{ $dvUrl | quote }}
-            - name: TIMEOUT
-              value: {{ .Values.bootstrapJob.timeout | quote }}
+{{ include "dataverseup.bootstrapJobMinimalEnv" (dict "dvUrl" $dvUrl "timeout" .Values.bootstrapJob.timeout) | indent 12 }}
           {{- end }}
           {{- with .Values.bootstrapJob.resources }}
           resources:
@@ -87,42 +74,6 @@ spec:
           {{- end }}
       {{- if eq .Values.bootstrapJob.mode "compose" }}
       volumes:
-        - name: bootstrap-scripts
-          configMap:
-            name: {{ include "dataverseup.fullname" . }}-bootstrap-chain
-            defaultMode: 0555
-            items:
-              - key: bootstrap-chain.sh
-                path: bootstrap-chain.sh
-              - key: apply-branding.sh
-                path: apply-branding.sh
-              - key: seed-content.sh
-                path: seed-content.sh
-        - name: branding-env
-          configMap:
-            name: {{ include "dataverseup.fullname" . }}-bootstrap-chain
-            items:
-              - key: branding.env
-                path: branding.env
-        - name: seed-flat
-          configMap:
-            name: {{ include "dataverseup.fullname" . }}-bootstrap-chain
-            items:
-              - key: demo-collection.json
-                path: demo-collection.json
-              - key: dataset-images.json
-                path: dataset-images.json
-              - key: dataset-tabular.json
-                path: dataset-tabular.json
-              - key: files_1x1.png
-                path: files_1x1.png
-              - key: files_badge.svg
-                path: files_badge.svg
-              - key: files_readme.txt
-                path: files_readme.txt
-              - key: files_sample.csv
-                path: files_sample.csv
-        - name: bootstrap-work
-          emptyDir: {}
+{{ include "dataverseup.bootstrapComposeVolumes" . | nindent 8 }}
       {{- end }}
 {{- end }}

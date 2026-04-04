@@ -172,14 +172,14 @@ solrInit:
   adminPassword: ""
   resources: {}
 
-# Compose mounts the full repo **init.d/** at `/opt/payara/init.d`. Enable this to ship the same `*.sh` bundle via
+# Compose mounts **scripts/init.d/** at `/opt/payara/init.d`. Enable this to ship the same `*.sh` bundle via
 # the chart ConfigMap (see **initdFromChart** in **charts/dataverseup/values.yaml**). Scripts run in lexical order;
-# **012/013-minio** expect compose MinIO (no-op or skip if you use S3 only). **1001-webhooks** needs **triggers/**
+# **012/013-minio** expect compose MinIO (no-op or skip if you use S3 only). **1001-webhooks** needs **scripts/triggers/** mounted at `/opt/payara/triggers` (Compose default).
 # on disk unless you mount it separately.
 initdFromChart:
   enabled: true
 
-# Mount init.d/010-mailrelay-set.sh (compose-compatible). Requires system_email (and related env) to do work.
+# Mount scripts/init.d/010-mailrelay-set.sh (compose-compatible). Requires system_email (and related env) to do work.
 mail:
   enabled: true
 
@@ -214,7 +214,7 @@ extraEnvVars:
     value: "8983"
   - name: dataverse_solr_core
     value: dataverse
-  # In-cluster Dataverse HTTP base (for tooling that expects a full URL). If you mount compose-style init.d
+  # In-cluster Dataverse HTTP base (for tooling that expects a full URL). If you mount compose-style scripts/init.d
   # that does http://${DATAVERSE_URL}/api, use host:port only (no scheme) instead.
   - name: DATAVERSE_URL
     value: "http://demo-dataverseup.demo-dataverseup.svc.cluster.local:80"
@@ -244,7 +244,7 @@ extraEnvVars:
     value: FK2/
   - name: INIT_SCRIPTS_FOLDER
     value: /opt/payara/init.d
-  # Payara JavaMail + :SystemEmail (init.d/010-mailrelay-set.sh).
+    # Payara JavaMail + :SystemEmail (scripts/init.d/010-mailrelay-set.sh).
   # Literal SMTP_* (override via GitHub Environment if you reintroduce envsubst for these keys).
   - name: SMTP_ADDRESS
     value: "smtp.sendgrid.net"

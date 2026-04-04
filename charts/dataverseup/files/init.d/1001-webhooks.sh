@@ -1,1 +1,1 @@
-../../../../init.d/1001-webhooks.sh
+../../../../scripts/init.d/1001-webhooks.sh

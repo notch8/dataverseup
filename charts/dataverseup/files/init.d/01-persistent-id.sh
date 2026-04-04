@@ -1,1 +1,1 @@
-../../../../init.d/01-persistent-id.sh
+../../../../scripts/init.d/01-persistent-id.sh

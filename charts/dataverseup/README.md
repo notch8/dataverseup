@@ -22,7 +22,7 @@ See **[docs/DEPLOYMENT.md](../../docs/DEPLOYMENT.md)** in this repository for pr
 
 ## Payara init scripts (S3, mail)
 
-S3 and mail relay scripts live only under **`files/init.d/`** as **symbolic links** to the repository root **`init.d/`** (same scripts Docker Compose mounts). Helm follows them when rendering and **`helm package` inlines their contents** into the chart archive, so published charts stay self-contained.
+S3 and mail relay scripts (and the full Payara bundle when `initdFromChart.enabled`) live under **`files/init.d/`** as **symbolic links** to **`scripts/init.d/`** (same tree Docker Compose mounts at `/opt/payara/init.d`). Helm follows them when rendering and **`helm package` inlines their contents** into the chart archive, so published charts stay self-contained.
 
 ## Configuration
 

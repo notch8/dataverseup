@@ -65,6 +65,83 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
 {{/*
+ConfigMap for compose-style bootstrap: bootstrap-chain.sh, apply-branding.sh, seed-content.sh, branding.env, seed fixtures.
+*/}}
+{{- define "dataverseup.bootstrapChainConfigMapName" -}}
+{{- printf "%s-bootstrap-chain" (include "dataverseup.fullname" .) }}
+{{- end }}
+
+{{/*
+Volume mounts for compose-mode bootstrap Jobs (configbaker runs bootstrap-chain.sh from the chain ConfigMap).
+*/}}
+{{- define "dataverseup.bootstrapComposeVolumeMounts" -}}
+- name: bootstrap-scripts
+  mountPath: /bootstrap-chain
+  readOnly: true
+- name: bootstrap-work
+  mountPath: /work
+- name: branding-env
+  mountPath: /config
+  readOnly: true
+- name: seed-flat
+  mountPath: /seed-flat
+  readOnly: true
+{{- end }}
+
+{{/*
+Volumes for compose-mode bootstrap (chain ConfigMap + emptyDir workdir).
+*/}}
+{{- define "dataverseup.bootstrapComposeVolumes" -}}
+- name: bootstrap-scripts
+  configMap:
+    name: {{ include "dataverseup.bootstrapChainConfigMapName" . }}
+    defaultMode: 0555
+    items:
+      - key: bootstrap-chain.sh
+        path: bootstrap-chain.sh
+      - key: apply-branding.sh
+        path: apply-branding.sh
+      - key: seed-content.sh
+        path: seed-content.sh
+- name: branding-env
+  configMap:
+    name: {{ include "dataverseup.bootstrapChainConfigMapName" . }}
+    items:
+      - key: branding.env
+        path: branding.env
+- name: seed-flat
+  configMap:
+    name: {{ include "dataverseup.bootstrapChainConfigMapName" . }}
+    items:
+      - key: demo-collection.json
+        path: demo-collection.json
+      - key: dataset-images.json
+        path: dataset-images.json
+      - key: dataset-tabular.json
+        path: dataset-tabular.json
+      - key: files_1x1.png
+        path: files_1x1.png
+      - key: files_badge.svg
+        path: files_badge.svg
+      - key: files_readme.txt
+        path: files_readme.txt
+      - key: files_sample.csv
+        path: files_sample.csv
+- name: bootstrap-work
+  emptyDir: {}
+{{- end }}
+
+{{/*
+Minimal env for default bootstrap Job (DATAVERSE_URL + TIMEOUT). Dict keys: dvUrl, timeout.
+*/}}
+{{- define "dataverseup.bootstrapJobMinimalEnv" -}}
+- name: DATAVERSE_URL
+  value: {{ index . "dvUrl" | quote }}
+- name: TIMEOUT
+  value: {{ index . "timeout" | quote }}
+{{- end -}}
+
+{{/*
 Service / CLI label query for the main Dataverse pods only. Pods also set component=primary;
 Deployment matchLabels stay name+instance only so upgrades do not hit immutable selector changes.
 */}}

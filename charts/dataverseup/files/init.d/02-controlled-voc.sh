@@ -1,1 +1,1 @@
-../../../../init.d/02-controlled-voc.sh
+../../../../scripts/init.d/02-controlled-voc.sh

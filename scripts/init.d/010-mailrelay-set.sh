@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Setup mail relay (Docker Compose init.d + Helm ConfigMap when values.mail.enabled).
+# Setup mail relay (Compose mount scripts/init.d + Helm ConfigMap when values.mail.enabled).
 # https://guides.dataverse.org/en/latest/developers/troubleshooting.html
 #
 # smtp_enabled: false|0|no skips. smtp_type=plain can imply SMTP AUTH when smtp_auth is unset.

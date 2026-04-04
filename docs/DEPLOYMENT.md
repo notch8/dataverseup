@@ -165,9 +165,9 @@ If you terminate TLS or expose the app on a **non-default host port**, keep **`D
 
 ### Payara init scripts (DRY with Compose)
 
-The chart embeds the S3 and mail relay scripts from **`init.d/`** at the repo root via symlinks under `charts/dataverseup/files/`. Edit **`init.d/006-s3-aws-storage.sh`** or **`init.d/010-mailrelay-set.sh`** once; both Compose mounts and Helm ConfigMaps stay aligned. `helm package` resolves symlink content into the tarball.
+The chart embeds the S3 and mail relay scripts from **`scripts/init.d/`** via symlinks under `charts/dataverseup/files/init.d/`. Edit **`scripts/init.d/006-s3-aws-storage.sh`** or **`scripts/init.d/010-mailrelay-set.sh`** once; both Compose mounts and Helm ConfigMaps stay aligned. `helm package` resolves symlink content into the tarball.
 
-Set **`initdFromChart.enabled: true`** in values to include **all** `files/init.d/*.sh` in the same ConfigMap (compose parity with mounting `./init.d`). Keep **`INIT_SCRIPTS_FOLDER`** (or the image default) pointed at **`/opt/payara/init.d`**. Review MinIO- and triggers-specific scripts before enabling in a cluster that does not mount those paths.
+Set **`initdFromChart.enabled: true`** in values to include **all** `files/init.d/*.sh` in the same ConfigMap (compose parity with mounting **`./scripts/init.d`**). Keep **`INIT_SCRIPTS_FOLDER`** (or the image default) pointed at **`/opt/payara/init.d`**. Review MinIO- and webhook/trigger scripts (repo **`scripts/triggers/`**, Compose → `/opt/payara/triggers`) before enabling in a cluster that does not mount those paths.
 
 ### S3 file storage
 
@@ -214,7 +214,7 @@ Set **`initdFromChart.enabled: true`** in values to include **all** `files/init.
 
 The Native API returns **HTTP 400** with that message when the request reached Dataverse but **writing to the configured store failed**. This is not a bug in the seed script’s `jsonData` shape.
 
-With **`dataverse.files.storage-driver-id=S3`** (see `init.d/006-s3-aws-storage.sh`):
+With **`dataverse.files.storage-driver-id=S3`** (see `scripts/init.d/006-s3-aws-storage.sh`):
 
 1. **IAM** — The principal in your `aws-s3-credentials` Secret needs at least **`s3:PutObject`**, **`s3:GetObject`**, **`s3:DeleteObject`**, and **`s3:ListBucket`** on the target bucket (and prefixes Dataverse uses). Missing `PutObject` often surfaces exactly as this generic message; the real error is in server logs.
 2. **Bucket and region** — `awsS3.bucketName` and `awsS3.region` must match the bucket. For **Amazon S3**, keep **`awsS3.endpointUrl` empty**; do not point it at `https://s3.<region>.amazonaws.com` unless you are on a non-AWS S3-compatible store.

@@ -51,7 +51,7 @@ Notch8's **ops wrapper** around stock **[Dataverse](https://dataverse.org/)** (G
 - **Chart:** `charts/dataverseup` — see **[charts/dataverseup/README.md](charts/dataverseup/README.md)** for a feature summary and `helm` commands.
 - **Runbook:** **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)** — Helm (prereqs, Secrets, Solr, S3, bootstrap), GitHub Actions deploy, `./bin/helm_deploy`, smoke tests, upgrades.
 
-Compose remains the default path for local/lab; Helm reuses the same **`init.d/`** scripts (via chart symlinks under `charts/dataverseup/files/`) where applicable.
+Compose remains the default path for local/lab; Helm reuses the same Payara scripts from **`scripts/init.d/`** (chart symlinks under `charts/dataverseup/files/init.d/`) where applicable.
 
 ## Layout
 
@@ -60,14 +60,11 @@ Compose remains the default path for local/lab; Helm reuses the same **`init.d/`
 | `docker-compose.yml` | Stack: Postgres, Solr, MinIO (optional), Dataverse, bootstrap, branding, seed; Traefik labels + **`networks.default.name: stackcar`** (Stack Car proxy) |
 | `.env.example` | Version pins and env template — copy to `.env` |
 | `secrets.example/` | Payara/Dataverse secret files template — copy to **`secrets/`** (see Quick start) |
-| `init.d/` | Payara init scripts (local storage, optional S3/MinIO when env set) |
-| `init.d/vendor-solr/` | Vendored Solr helpers for `1002-custom-metadata.sh` |
-| `config/schema.xml`, `config/solrconfig.xml` | Solr conf bind-mounts / upstream copies (see `scripts/solr-initdb/`) |
-| `config/update-fields.sh` | Upstream metadata-block tooling helper |
+| `scripts/` | **All automation:** Payara **`init.d/`**, Compose/K8s entrypoints, **`apply-branding.sh`**, **`seed-content.sh`**, **`solr-initdb/`**, **`solr/update-fields.sh`**, **`triggers/`**, **`k8s/`** |
+| `scripts/init.d/vendor-solr/` | Vendored Solr helpers for `1002-custom-metadata.sh` |
+| `config/schema.xml`, `config/solrconfig.xml` | Solr XML bind-mounts / upstream copies (see `scripts/solr-initdb/`) |
 | `branding/` | Installation branding + static assets |
 | `fixtures/seed/` | JSON + files for **`dev_seed`** |
-| `scripts/` | Bootstrap, branding, seed entrypoints, `apply-branding.sh`, `solr-initdb/` |
-| `triggers/` | Postgres notify + optional webhook script (see **`WEBHOOK`** in `.env.example`) |
 | `charts/dataverseup/` | Helm chart for Dataverse on Kubernetes (optional Solr, bootstrap Job, S3, Ingress, …) |
 | `bin/helm_deploy` | Wrapper around `helm upgrade --install` with sane defaults (see **`docs/DEPLOYMENT.md`**) |
 | `docs/DEPLOYMENT.md` | **Deployment runbook:** Helm/Kubernetes, optional GitHub Actions, Compose pointer, learnings log |
@@ -82,8 +79,8 @@ Compose uses **`solr:9.10.1`** with IQSS **`schema.xml`** / **`solrconfig.xml`**
 REF=develop  # or a release tag, e.g. v6.10.1
 curl -fsSL -o config/schema.xml "https://raw.githubusercontent.com/IQSS/dataverse/${REF}/conf/solr/schema.xml"
 curl -fsSL -o config/solrconfig.xml "https://raw.githubusercontent.com/IQSS/dataverse/${REF}/conf/solr/solrconfig.xml"
-curl -fsSL -o config/update-fields.sh "https://raw.githubusercontent.com/IQSS/dataverse/${REF}/conf/solr/update-fields.sh"
-chmod +x config/update-fields.sh
+curl -fsSL -o scripts/solr/update-fields.sh "https://raw.githubusercontent.com/IQSS/dataverse/${REF}/conf/solr/update-fields.sh"
+chmod +x scripts/solr/update-fields.sh
 ```
 
 If you previously ran Solr 8, remove the compose Solr volume once so the core is recreated under Solr 9, then reindex from Dataverse.

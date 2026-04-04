@@ -1,1 +1,1 @@
-../../../../init.d/012-minio-bucket1.sh
+../../../../scripts/init.d/012-minio-bucket1.sh
