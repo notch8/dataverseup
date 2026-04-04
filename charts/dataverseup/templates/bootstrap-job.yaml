@@ -59,6 +59,7 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.bootstrapJob.compose.existingAdminApiTokenSecret | quote }}
                   key: {{ .Values.bootstrapJob.compose.adminApiTokenSecretKey | default "token" | quote }}
+                  optional: true
             {{- end }}
           volumeMounts:
             - name: bootstrap-scripts

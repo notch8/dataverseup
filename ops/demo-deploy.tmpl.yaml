@@ -292,8 +292,8 @@ extraEnvVars:
 # **postUpgradeBrandingSeedJob** + admin API token Secret (see **charts/dataverseup/values.yaml**).
 # If you wiped Postgres later, use GitHub Deploy → "Run bootstrap job" or apply a Job by hand.
 #
-# When Dataverse is **already bootstrapped**, configbaker skips and does not write **API_TOKEN** — the chain then
-# needs a long-lived superuser API token from a Secret (same as post-upgrade branding job):
+# **existingAdminApiTokenSecret** is optional on first install (chart uses optional secretKeyRef). Create the
+# Secret after you have a superuser API token so re-runs / already-bootstrapped DB work:
 #   kubectl -n demo-dataverseup create secret generic dataverse-admin-api-token --from-literal=token=YOUR_UUID
 bootstrapJob:
   enabled: true

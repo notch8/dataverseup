@@ -309,7 +309,9 @@ bootstrapJob:
     # Run fixtures/seed after branding (set false for bootstrap+branding only).
     seed: true
     # When the DB is already bootstrapped, configbaker prints "skipping" and may not write API_TOKEN to the file.
-    # For CI "re-run bootstrap job" / branding+seed, create a Secret with a superuser API token and set the name:
+    # Optional admin API token Secret (same name can stay in values for the whole lifecycle). The Job uses
+    # secretKeyRef optional:true so a missing Secret on first install does not block the pod — configbaker
+    # still writes API_TOKEN. After bootstrap, create the Secret for re-runs / already-bootstrapped DB:
     #   kubectl create secret generic dataverse-admin-api-token -n YOUR_NS --from-literal=token=UUID
     existingAdminApiTokenSecret: ""
     adminApiTokenSecretKey: token
