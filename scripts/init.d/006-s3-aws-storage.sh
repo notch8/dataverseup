@@ -37,14 +37,10 @@ if [ -n "${aws_bucket_name:-}" ]; then
         | grep -v -E '^create-system-properties dataverse\.files\.S3\.' \
         | grep -v -E '^deploy ' > "$_pb_pre" || true
     grep -E '^deploy ' "$POSTBOOT_COMMANDS_FILE" > "$_pb_dep" || true
-    _ep=$(printf '%s' "${aws_endpoint_url}" | sed -e 's/:/\\\:/g')
-    # With custom-endpoint-url set, Dataverse's S3AccessIO uses JVM key custom-endpoint-region for SigV4.
-    # If unset, upstream defaults to the literal string "dataverse" → S3 400 "region 'dataverse' is wrong".
+    # Amazon S3: leave custom-endpoint-url unset so the AWS SDK uses default resolution (virtual-hosted buckets,
+    # correct SigV4). Setting a regional URL here often breaks uploads with opaque "Failed to save the content" errors.
+    # MinIO / S3-compatible: set aws_endpoint_url (Helm awsS3.endpointUrl) to your service base URL.
     _s3_reg="${aws_s3_region:-${AWS_REGION:-}}"
-    if [ -z "${_s3_reg}" ]; then
-        echo "006-s3-aws-storage: set aws_s3_region (Helm awsS3.region) or AWS_REGION when using custom-endpoint-url" >&2
-        return 1
-    fi
     {
         cat "$_pb_pre"
         echo "create-system-properties dataverse.files.S3.type=s3"
@@ -55,8 +51,15 @@ if [ -n "${aws_bucket_name:-}" ]; then
         echo "create-system-properties dataverse.files.S3.connection-pool-size=4096"
         echo "create-system-properties dataverse.files.storage-driver-id=S3"
         echo "create-system-properties dataverse.files.S3.profile=${aws_s3_profile}"
-        echo "create-system-properties dataverse.files.S3.custom-endpoint-url=${_ep}"
-        echo "create-system-properties dataverse.files.S3.custom-endpoint-region=${_s3_reg}"
+        if [ -n "${aws_endpoint_url:-}" ]; then
+            if [ -z "${_s3_reg}" ]; then
+                echo "006-s3-aws-storage: set aws_s3_region (Helm awsS3.region) or AWS_REGION when aws_endpoint_url is set" >&2
+                return 1
+            fi
+            _ep=$(printf '%s' "${aws_endpoint_url}" | sed -e 's/:/\\\:/g')
+            echo "create-system-properties dataverse.files.S3.custom-endpoint-url=${_ep}"
+            echo "create-system-properties dataverse.files.S3.custom-endpoint-region=${_s3_reg}"
+        fi
         cat "$_pb_dep"
     } > "$POSTBOOT_COMMANDS_FILE"
     trap - EXIT

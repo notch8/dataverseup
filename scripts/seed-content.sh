@@ -96,12 +96,33 @@ upload_file() {
   _dir=$3
   _tab=$4
   _enc=$(encode_pid "$_pid")
-  _json=$(printf '{"description":"DataverseUp seed","directoryLabel":"%s","restrict":"false","tabIngest":"%s"}' "$_dir" "$_tab")
-  curl -fsS --max-time 300 --globoff -X POST \
+  # Booleans must be JSON true/false (not quoted strings); include categories per Native API examples.
+  _json=$(printf '{"description":"DataverseUp seed","directoryLabel":"%s","restrict":false,"tabIngest":%s,"categories":["Data"]}' "$_dir" "$_tab")
+  _resp=$(curl -sS --max-time 300 --globoff -X POST \
     -H "X-Dataverse-key: ${TOKEN}" \
     -F "file=@${_path}" \
     -F "jsonData=${_json}" \
-    "${API}/datasets/:persistentId/add?persistentId=${_enc}"
+    -w "\n%{http_code}" \
+    "${API}/datasets/:persistentId/add?persistentId=${_enc}" || printf '%s\n' "000")
+  _code=$(printf '%s\n' "$_resp" | tail -n 1)
+  _body=$(printf '%s\n' "$_resp" | sed '$d')
+  case "$_code" in
+    200|201|204)
+      return 0
+      ;;
+    *)
+      echo "seed-content: upload $(basename "$_path") failed HTTP ${_code}" >&2
+      printf '%s\n' "$_body" >&2
+      case "$_body" in
+        *Failed*to*save*the*content*)
+          echo "seed-content: hint: Dataverse accepted the upload but could not write to file storage." >&2
+          echo "seed-content: hint: With awsS3.enabled, check IAM (s3:PutObject/GetObject/DeleteObject/ListBucket on the bucket), bucket name/region vs values, and that pods were restarted after creating aws-s3-credentials. See docs/DEPLOYMENT.md (S3 troubleshooting)." >&2
+          echo "seed-content: hint: Inspect the Dataverse pod logs for AWS SDK errors (AccessDenied, NoSuchBucket, etc.)." >&2
+          ;;
+      esac
+      exit 1
+      ;;
+  esac
 }
 
 # Datasets cannot be published while their host collection is still unpublished (API often returns 403).

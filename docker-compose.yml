@@ -27,7 +27,7 @@ services:
         - "POSTGRES_PORT"
       volumes:
         - postgres_data:/var/lib/postgresql/data
-        - ./triggers:/triggers
+        - ./scripts/triggers:/triggers
 
     solr:
       <<: *env-from-file
@@ -184,8 +184,8 @@ services:
         # /dv/docroot/logos/<id>/... (theme uploads) stays on the container filesystem.
         - ./branding/docroot/logos/navbar:/dv/docroot/logos/navbar:ro
         - ./branding/docroot/branding:/dv/docroot/branding:ro
-        - ./init.d:/opt/payara/init.d
-        - ./triggers:/opt/payara/triggers
+        - ./scripts/init.d:/opt/payara/init.d
+        - ./scripts/triggers:/opt/payara/triggers
         - ./config/schema.xml:/opt/payara/dvinstall/schema.xml
       labels:
         - "traefik.enable=true"

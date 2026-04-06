@@ -1,0 +1,1 @@
+../../../../scripts/init.d/006-s3-aws-storage.sh

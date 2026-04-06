@@ -1,0 +1,32 @@
+{{- if and .Values.bootstrapJob.enabled (eq .Values.bootstrapJob.mode "compose") }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dataverseup.fullname" . }}-bootstrap-chain
+  labels:
+    {{- include "dataverseup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap-chain
+binaryData:
+  files_1x1.png: {{ .Files.Get "files/fixtures-seed/files_1x1.png" | b64enc }}
+data:
+  bootstrap-chain.sh: |
+{{ .Files.Get "files/k8s-bootstrap-chain.sh" | trim | nindent 4 }}
+  apply-branding.sh: |
+{{ .Files.Get "files/apply-branding.sh" | trim | nindent 4 }}
+  seed-content.sh: |
+{{ .Files.Get "files/seed-content.sh" | trim | nindent 4 }}
+  branding.env: |
+{{ .Files.Get "files/branding.env" | trim | nindent 4 }}
+  demo-collection.json: |
+{{ .Files.Get "files/fixtures-seed/demo-collection.json" | trim | nindent 4 }}
+  dataset-images.json: |
+{{ .Files.Get "files/fixtures-seed/dataset-images.json" | trim | nindent 4 }}
+  dataset-tabular.json: |
+{{ .Files.Get "files/fixtures-seed/dataset-tabular.json" | trim | nindent 4 }}
+  files_badge.svg: |
+{{ .Files.Get "files/fixtures-seed/files_badge.svg" | trim | nindent 4 }}
+  files_readme.txt: |
+{{ .Files.Get "files/fixtures-seed/files_readme.txt" | trim | nindent 4 }}
+  files_sample.csv: |
+{{ .Files.Get "files/fixtures-seed/files_sample.csv" | trim | nindent 4 }}
+{{- end }}

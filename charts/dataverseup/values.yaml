@@ -1,0 +1,325 @@
+# Default values for dataverseup.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+replicaCount: 1
+
+# Optional Deployment strategy (e.g. for replicaCount=1 on small clusters: maxSurge: 0, maxUnavailable: 1
+# avoids two Payara JVMs during a rolling update).
+deploymentStrategy: {}
+
+# Container listens on 8080 (Payara). Service can expose 80 for Ingress.
+container:
+  port: 8080
+
+image:
+  repository: gdcc/dataverse
+  pullPolicy: IfNotPresent
+  # Docker Hub uses -noble-rN tags (see .env VERSION); there is no bare 6.10.1 tag.
+  # If empty, templates fall back to Chart.AppVersion.
+  tag: "6.10.1-noble-r0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 80
+  # targetPort is the named port on the pod (http → container.port).
+
+# Load env vars from existing cluster objects (place after extraEnvFrom in pod spec; explicit
+# extraEnvVars below override same keys). Prefer Secrets for credentials — create them out-of-band
+# (kubectl, External Secrets, Sealed Secrets), not in Helm values, so they are not stored in release history.
+extraEnvFrom: []
+# - secretRef:
+#     name: dataverse-credentials
+# - configMapRef:
+#     name: dataverse-nonsecret-config
+
+# Pass through to the Deployment; use ops/*-deploy.tmpl.yaml + envsubst for per-env values.
+extraEnvVars: []
+# - name: EXAMPLE
+#   value: "from-template"
+
+livenessProbe:
+  httpGet:
+    path: /api/info/version
+    port: http
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+readinessProbe:
+  httpGet:
+    path: /api/info/version
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 6
+
+# Optional startupProbe (omit key to disable). While failing, liveness/readiness do not run — avoids SIGTERM
+# during slow Payara boot when :8080 still refuses connections. See deploy/k3d/values-k3d.yaml.in.
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # kubernetes.io/tls-acme: "true"
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+  #  - secretName: chart-example-tls
+  #    hosts:
+  #      - chart-example.local
+
+resources: {}
+  # We usually recommend not to specify default resources and to leave this as a conscious
+  # choice for the user. This also increases chances charts run on environments with little
+  # resources, such as Minikube. If you do want to specify resources, uncomment the following
+  # lines, adjust them as necessary, and remove the curly braces after 'resources:'.
+  # limits:
+  #   cpu: 100m
+  #   memory: 128Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# RWO PVC for Payara/Dataverse file storage (e.g. /data). Use 1 replica or a ReadWriteMany
+# storage class if you scale out. Set existingClaim to bind a PVC created outside this chart.
+persistence:
+  enabled: false
+  mountPath: /data
+  size: 20Gi
+  accessMode: ReadWriteOnce
+  storageClassName: ""
+  existingClaim: ""
+
+# Optional second PVC for DATAVERSE_FILES_DOCROOT (gdcc image default: /dv/docroot). Same pattern as legacy
+# dataverse-k8s "docroot" volume, but correct path for gdcc/dataverse — /logos/*, theme uploads, branding.
+# https://guides.dataverse.org/en/latest/container/app-image.html#locations
+# With RWO EBS, set podSecurityContext.fsGroup: 1000 so user payara can write the volume.
+docrootPersistence:
+  enabled: false
+  mountPath: /dv/docroot
+  size: 6Gi
+  accessMode: ReadWriteOnce
+  storageClassName: ""
+  existingClaim: ""
+
+# Navbar logo from chart (symlink to branding/docroot/logos/navbar/logo.svg). Uses a writable emptyDir on
+# /dv/docroot (or copies onto docrootPersistence PVC) — read-only ConfigMap mounts break ConfigCheckService.
+brandingNavbarLogos:
+  enabled: false
+  initImage: busybox:1.36
+  docrootUid: 1000
+  docrootGid: 1000
+
+# Ship the repo **scripts/init.d/*.sh** bundle into the Payara ConfigMap (compose parity: ./scripts/init.d → /opt/payara/init.d).
+# When true, all scripts under charts/dataverseup/files/init.d/*.sh are included; optional configMap.data overlays.
+# Some scripts assume compose paths (MinIO, /opt/payara/triggers, etc.) — review before enabling in production.
+initdFromChart:
+  enabled: false
+
+# Optional ConfigMap created by this chart; keys become filenames under mountPath (e.g. init scripts).
+configMap:
+  enabled: false
+  mountPath: /opt/payara/init.d
+  data: {}
+  # example:
+  # data:
+  #   "99-custom.sh": |
+  #     #!/bin/sh
+  #     echo ok
+
+# Mount compose-compatible mail init script (010-mailrelay-set.sh) under configMap.mountPath.
+# Pod env (from extraEnvVars): system_email, mailhost, mailuser, no_reply_email, smtp_password, smtp_port,
+# socket_port, smtp_auth, smtp_starttls, smtp_type, smtp_enabled — often mapped from SMTP_* in your env template.
+# Payara ADMIN_USER / PASSWORD_FILE come from the gdcc image. If system_email is unset, the script no-ops.
+mail:
+  enabled: false
+
+# Escape hatch: mount Secrets, extra PVCs, projected volumes, or host paths (compose-style /secrets).
+# For nested paths from a Secret, use a projected volume:
+# volumes:
+#   - name: app-secrets
+#     projected:
+#       sources:
+#         - secret:
+#             name: dataverse-secrets
+#             items:
+#               - key: db_password
+#                 path: db/password
+#               - key: admin_password
+#                 path: admin/password
+# volumeMounts:
+#   - name: app-secrets
+#     mountPath: /secrets
+#     readOnly: true
+volumes: []
+
+volumeMounts: []
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Optional raw initContainers run before the main container (same idea as Hyrax chart solrPreSetupInitContainer).
+solrPreSetupInitContainer: []
+
+# Dedicated Solr for this release only — not a shared cluster Solr service or SolrCloud pool. Official
+# image, single core "dataverse" via solr-precreate + solrInit.confConfigMap (solr-conf.tgz or flat keys).
+# Pair with solrInit.enabled and solrInit.mode: standalone (default). solrHttpBase can stay empty: the chart
+# fills http://<release>-solr.<namespace>.svc.cluster.local:8983 when internalSolr is enabled.
+# Pin matches docker-compose.yml (IQSS conf/solr for Solr 9 / Lucene 9.x). On Apple Silicon, prefer amd64
+# nodes or cluster image policy — Compose uses platform linux/amd64 for Solr/Dataverse.
+internalSolr:
+  enabled: false
+  image: solr:9.10.1
+  imagePullPolicy: IfNotPresent
+  # Official solr image uses uid/gid 8983; fsGroup + init chown make PVC/emptyDir writable for solr-precreate.
+  podSecurityContext:
+    fsGroup: 8983
+  resources: {}
+  persistence:
+    enabled: false
+    size: 5Gi
+    storageClassName: ""
+
+# SolrCloud bootstrap before Payara starts (same pattern as Hyrax load-solr-config initContainer:
+# https://github.com/samvera/hyrax/blob/main/chart/hyrax/templates/deployment.yaml ).
+# Uses a Solr image for `solr zk upconfig`, not the Dataverse image (which has no Hyrax shell scripts).
+# Provide a ConfigMap whose keys are Solr conf filenames (schema.xml, solrconfig.xml, …) from the Dataverse
+# release that matches your Dataverse version — see https://guides.dataverse.org/en/latest/installation/prerequisites.html#solr
+# Image aligns with internalSolr / Compose (Solr 9). standalone mode only needs curl+bash; cloud mode runs
+# `solr zk upconfig` — use a Solr major that matches your SolrCloud nodes; override solrBin if you use Bitnami.
+solrInit:
+  enabled: false
+  image: solr:9.10.1
+  imagePullPolicy: IfNotPresent
+  # CLI path inside solrInit.image (official Solr 9: /opt/solr/bin/solr; Bitnami legacy: /opt/bitnami/solr/bin/solr).
+  solrBin: /opt/solr/bin/solr
+  securityContext:
+    runAsUser: 8983
+    runAsGroup: 8983
+    runAsNonRoot: true
+  # standalone = wait for core ping (default; use with internalSolr — new Solr pod with this deploy).
+  # cloud = zk upconfig + Collections API — only if you point at an existing SolrCloud + ZK (not the in-chart Solr).
+  mode: standalone
+  # ZooKeeper connect string (required only when mode: cloud), e.g. zk-0.zk-hs:2181/solr
+  zkConnect: ""
+  # Solr admin base URL (no path). Leave empty when internalSolr.enabled — chart sets the in-release Service URL.
+  # For a shared cluster Solr or SolrCloud front door, set explicitly, e.g. http://solr.mysolr.svc.cluster.local:8983
+  solrHttpBase: ""
+  collection: dataverse
+  configSetName: dataverse_config
+  numShards: 1
+  replicationFactor: 2
+  # Name of an existing ConfigMap in the release namespace (keys = files under conf/)
+  confConfigMap: ""
+  # Optional Secret with SOLR_ADMIN_USER / SOLR_ADMIN_PASSWORD for Solr basic auth
+  existingSecret: ""
+  # If existingSecret is empty, optional inline auth (prefer Secret)
+  adminUser: ""
+  adminPassword: ""
+  resources: {}
+
+# AWS S3 file storage: Secret mount + env (aws_bucket_name, …) plus bundled 006-s3-aws-storage.sh mounted at
+# /opt/payara/scripts/init.d/ (base image entrypoint runs that path before Payara starts). See docs/DEPLOYMENT.md.
+awsS3:
+  enabled: false
+  # Name of a Secret you create out-of-band (keys = secretKeys below). Required when enabled.
+  existingSecret: ""
+  bucketName: "your-bucket-name"
+  # Leave empty for real Amazon S3 (recommended). Set for MinIO / S3-compatible only (e.g. https://minio:9000).
+  endpointUrl: ""
+  # AWS SigV4 signing region (e.g. us-west-2). Must match bucket; set in mounted config + AWS_REGION on Deployment.
+  region: "us-west-2"
+  # Must match the profile section in mounted .aws/credentials (e.g. [default]); override in values if needed.
+  profile: default
+  secretKeys:
+    credentials: credentials
+    config: config
+
+# gdcc/configbaker Job (post-install hook by default).
+# - mode: oneShot — `bootstrapJob.command` only (e.g. bootstrap.sh dev), same as a minimal container demo.
+# - mode: compose — like docker compose: configbaker writes API token, then apply-branding.sh, then seed-content.sh
+#   (repo scripts + fixtures baked into a ConfigMap). Uses emptyDir for bootstrap.env inside the Job only.
+# - helmHook=true: runs once on install only (not upgrade). helmHook=false: plain Job (immutable spec on upgrade).
+bootstrapJob:
+  enabled: false
+  mode: oneShot
+  helmHook: true
+  image:
+    repository: gdcc/configbaker
+    tag: ""
+    pullPolicy: IfNotPresent
+  command:
+    - bootstrap.sh
+    - dev
+  # Empty = http://<fullname>.<namespace>.svc.cluster.local:<service.port> (matches DATAVERSE_URL on Deployment).
+  dataverseUrl: ""
+  timeout: 20m
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
+  resources: {}
+  compose:
+    # Wait for /api/info/version before bootstrap.sh (Payara can be slow after install).
+    waitMaxSeconds: 900
+    waitSleepSeconds: 5
+    # Run fixtures/seed after branding (set false for bootstrap+branding only).
+    seed: true
+    # When the DB is already bootstrapped, configbaker prints "skipping" and may not write API_TOKEN to the file.
+    # Optional admin API token Secret (same name can stay in values for the whole lifecycle). The Job uses
+    # secretKeyRef optional:true so a missing Secret on first install does not block the pod — configbaker
+    # still writes API_TOKEN. After bootstrap, create the Secret for re-runs / already-bootstrapped DB:
+    #   kubectl create secret generic dataverse-admin-api-token -n YOUR_NS --from-literal=token=UUID
+    existingAdminApiTokenSecret: ""
+    adminApiTokenSecretKey: token
+    # post-upgrade hook: branding + seed only (no configbaker). Use when the release was upgraded and the
+    # post-install hook never ran compose, or you need to re-apply after changing branding/fixtures in the chart.
+    # Create a Secret first, e.g. kubectl create secret generic dv-admin-api-token -n ns --from-literal=token=UUID
+    postUpgradeBrandingSeedJob:
+      enabled: false
+      existingSecret: ""
+      secretKey: token

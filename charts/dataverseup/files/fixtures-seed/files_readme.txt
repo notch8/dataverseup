@@ -1,0 +1,1 @@
+../../../../fixtures/seed/files/readme.txt

@@ -1,0 +1,1 @@
+../../../../scripts/init.d/05-reindex.sh

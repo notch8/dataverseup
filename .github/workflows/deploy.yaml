@@ -27,7 +27,7 @@ on:
         required: false
         type: string
       run_bootstrap_job:
-        description: Re-run the bootstrap Job (helmHook=false) — same manifest as chart templates/bootstrap-job.yaml; use if the post-install hook was skipped or you reset Postgres. Chart default mode is oneShot (configbaker bootstrap.sh dev). Deletes the prior Job by name first.
+        description: Re-run the bootstrap Job (helmHook=false, compose). Requires Secret dataverse-admin-api-token (key token) in the namespace when the instance is already bootstrapped — see ops/*-deploy.tmpl.yaml bootstrapJob.compose.existingAdminApiTokenSecret. Deletes the prior Job by name first.
         required: false
         type: boolean
         default: false
@@ -42,20 +42,8 @@ jobs:
     environment: ${{ inputs.environment }}
     env:
       DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-      # Optional mail — secrets + Environment variables (see ops/demo-deploy.tmpl.yaml header).
-      SYSTEM_EMAIL: ${{ secrets.SYSTEM_EMAIL }}
-      NO_REPLY_EMAIL: ${{ secrets.NO_REPLY_EMAIL }}
+      # Mail: SendGrid API key only — host/ports/From/support address are literals in ops/<env>-deploy.tmpl.yaml.
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-      MAIL_SMTP_PASSWORD: ${{ secrets.MAIL_SMTP_PASSWORD }}
-      SMTP_ADDRESS: ${{ vars.SMTP_ADDRESS }}
-      SMTP_USER_NAME: ${{ vars.SMTP_USER_NAME }}
-      SMTP_PORT: ${{ vars.SMTP_PORT }}
-      SOCKET_PORT: ${{ vars.SOCKET_PORT }}
-      SMTP_AUTH: ${{ vars.SMTP_AUTH }}
-      SMTP_STARTTLS: ${{ vars.SMTP_STARTTLS }}
-      SMTP_TYPE: ${{ vars.SMTP_TYPE }}
-      SMTP_ENABLED: ${{ vars.SMTP_ENABLED }}
-      SMTP_DOMAIN: ${{ vars.SMTP_DOMAIN }}
       DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
       HELM_RELEASE_NAME: ${{ inputs.k8s_release_name || format('{0}-{1}', inputs.environment, github.event.repository.name) }}
       HELM_NAMESPACE: ${{ inputs.k8s_namespace || format('{0}-{1}', inputs.environment, github.event.repository.name) }}
@@ -94,15 +82,18 @@ jobs:
           TMPL="ops/${DEPLOY_ENVIRONMENT}-deploy.tmpl.yaml"
           OUT="ops/${DEPLOY_ENVIRONMENT}-deploy.yaml"
           echo "$KUBECONFIG_FILE" | base64 -d >"$KUBECONFIG"
-          export SMTP_PORT="${SMTP_PORT:-25}"
-          export SOCKET_PORT="${SOCKET_PORT:-${SMTP_PORT}}"
-          export SMTP_PASSWORD="${SMTP_PASSWORD:-${MAIL_SMTP_PASSWORD:-}}"
-          if [ -z "${NO_REPLY_EMAIL:-}" ] && [ -n "${SMTP_DOMAIN:-}" ]; then
-            export NO_REPLY_EMAIL="noreply@${SMTP_DOMAIN}"
-          fi
-          # Only secrets + rollout id — hosts, Solr DNS, ingress, and bucket are literals in the *.tmpl.yaml file.
-          ENVSUBST_VARS='$GITHUB_RUN_ID $DB_PASSWORD $SYSTEM_EMAIL $SMTP_PASSWORD $SMTP_AUTH'
+          # envsubst: only secrets + rollout id. Everything else (SMTP host, ports, From, URLs, Solr, …) is literals in the *.tmpl.yaml file.
+          ENVSUBST_VARS='$GITHUB_RUN_ID $DB_PASSWORD $SMTP_PASSWORD'
           envsubst "$ENVSUBST_VARS" <"$TMPL" >"$OUT"
+
+      - name: Solr conf ConfigMap (pre-Helm)
+        env:
+          DV_REF: ${{ vars.DV_REF || 'v6.10.1' }}
+          SOLR_DIST_VERSION: ${{ vars.SOLR_DIST_VERSION || '9.10.1' }}
+        run: |
+          set -e
+          chmod +x scripts/solr-init-k8s.sh scripts/k8s/ensure-solr-conf-configmap.sh
+          SOLR_RESTART_DEPLOYMENTS=false ./scripts/solr-init-k8s.sh "$HELM_NAMESPACE" "$HELM_RELEASE_NAME"
 
       - name: Deploy with Helm
         run: |
@@ -116,6 +107,16 @@ jobs:
             -l "app.kubernetes.io/instance=${HELM_RELEASE_NAME},app.kubernetes.io/name=${HELM_APP_NAME}" \
             --timeout="${DEPLOY_ROLLOUT_TIMEOUT}"
 
+      - name: Solr workloads pick up ConfigMap updates
+        if: ${{ vars.SOLR_POST_HELM_ROLLOUT == 'true' }}
+        env:
+          DV_REF: ${{ vars.DV_REF || 'v6.10.1' }}
+          SOLR_DIST_VERSION: ${{ vars.SOLR_DIST_VERSION || '9.10.1' }}
+        run: |
+          set -e
+          chmod +x scripts/solr-init-k8s.sh scripts/k8s/ensure-solr-conf-configmap.sh
+          SOLR_APPLY_CM=false ./scripts/solr-init-k8s.sh "$HELM_NAMESPACE" "$HELM_RELEASE_NAME"
+
       - name: One-shot bootstrap Job (non-hook)
         if: github.event_name == 'workflow_dispatch' && inputs.run_bootstrap_job
         run: |
@@ -125,9 +126,11 @@ jobs:
           helm template "$HELM_RELEASE_NAME" "$HELM_CHART_PATH" \
             --namespace "$HELM_NAMESPACE" \
             $HELM_EXTRA_ARGS \
+            --show-only templates/bootstrap-chain-configmap.yaml \
             --show-only templates/bootstrap-job.yaml \
             --set bootstrapJob.enabled=true \
             --set bootstrapJob.helmHook=false \
+            --set bootstrapJob.mode=compose \
             >"$OUT"
           JOB="$(awk '/^kind: Job$/{j=1} j && /^  name: /{print $2; exit}' "$OUT")"
           if [ -z "$JOB" ]; then

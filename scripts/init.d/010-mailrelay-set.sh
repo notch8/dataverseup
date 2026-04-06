@@ -1,9 +1,10 @@
 #!/bin/bash
 
-# Setup mail relay
+# Setup mail relay (Compose mount scripts/init.d + Helm ConfigMap when values.mail.enabled).
 # https://guides.dataverse.org/en/latest/developers/troubleshooting.html
 #
-# smtp_enabled / smtp_type=plain — same behavior as charts/demo-dataverse/files/010-mailrelay-set.sh
+# smtp_enabled: false|0|no skips. smtp_type=plain can imply SMTP AUTH when smtp_auth is unset.
+# smtp_auth / smtp_starttls: true|1|yes when set explicitly.
 case "${smtp_enabled}" in
     false|0|no|NO|False) exit 0 ;;
 esac

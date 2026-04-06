@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-# Solr field-update scripts are vendored under init.d/vendor-solr/ (from IQSS Dataverse v5.x release assets; stable helpers for schema merge + Solr MDB update).
+# Solr field-update scripts are vendored under vendor-solr/ next to this script (repo: scripts/init.d/vendor-solr/; container: $HOME_DIR/init.d/vendor-solr/).
 # Avoids runtime version skew against the running Dataverse image.
 
 if [ "${CLARIN:-}" ]; then

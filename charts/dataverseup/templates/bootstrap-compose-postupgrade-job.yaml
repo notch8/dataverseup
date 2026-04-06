@@ -1,0 +1,115 @@
+{{- if and .Values.bootstrapJob.enabled (eq .Values.bootstrapJob.mode "compose") .Values.bootstrapJob.compose.postUpgradeBrandingSeedJob.enabled .Values.bootstrapJob.compose.postUpgradeBrandingSeedJob.existingSecret }}
+{{- $pu := .Values.bootstrapJob.compose.postUpgradeBrandingSeedJob }}
+{{- $dvUrl := .Values.bootstrapJob.dataverseUrl | default (printf "http://%s.%s.svc.cluster.local:%v" (include "dataverseup.fullname" .) .Release.Namespace .Values.service.port) }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "dataverseup.fullname" . }}-bootstrap-branding-seed
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dataverseup.labels" . | nindent 4 }}
+    app.kubernetes.io/component: configbaker-bootstrap-branding-seed
+  annotations:
+    helm.sh/hook: post-upgrade
+    helm.sh/hook-weight: "20"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded,hook-failed
+spec:
+  backoffLimit: {{ .Values.bootstrapJob.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.bootstrapJob.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "dataverseup.bootstrapPodLabels" . | nindent 8 }}
+        app.kubernetes.io/component: configbaker-bootstrap-branding-seed
+    spec:
+      restartPolicy: Never
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: configbaker
+          image: "{{ .Values.bootstrapJob.image.repository }}:{{ .Values.bootstrapJob.image.tag | default .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.bootstrapJob.image.pullPolicy }}
+          command: ["/bin/bash", "/bootstrap-chain/bootstrap-chain.sh"]
+          env:
+            - name: BOOTSTRAP_CHAIN_SKIP_BOOTSTRAP
+              value: "1"
+            - name: DATAVERSE_URL
+              value: {{ $dvUrl | quote }}
+            - name: DATAVERSE_INTERNAL_URL
+              value: {{ $dvUrl | quote }}
+            - name: DATAVERSE_BOOTSTRAP_SECRETS_DIR
+              value: "/work"
+            - name: DATAVERSE_BOOTSTRAP_ENV_FILE
+              value: "/work/api/bootstrap.env"
+            - name: BOOTSTRAP_CHAIN_WAIT_MAX_SECONDS
+              value: {{ .Values.bootstrapJob.compose.waitMaxSeconds | toString | quote }}
+            - name: BOOTSTRAP_CHAIN_WAIT_SLEEP
+              value: {{ .Values.bootstrapJob.compose.waitSleepSeconds | toString | quote }}
+            - name: BOOTSTRAP_CHAIN_SEED
+              value: {{ if .Values.bootstrapJob.compose.seed }}"1"{{ else }}"0"{{ end }}
+            - name: BRANDING_ENV_PATH
+              value: "/config/branding.env"
+            - name: TIMEOUT
+              value: {{ .Values.bootstrapJob.timeout | quote }}
+            - name: DATAVERSE_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $pu.existingSecret | quote }}
+                  key: {{ $pu.secretKey | quote }}
+          volumeMounts:
+            - name: bootstrap-scripts
+              mountPath: /bootstrap-chain
+              readOnly: true
+            - name: bootstrap-work
+              mountPath: /work
+            - name: branding-env
+              mountPath: /config
+              readOnly: true
+            - name: seed-flat
+              mountPath: /seed-flat
+              readOnly: true
+          {{- with .Values.bootstrapJob.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: bootstrap-scripts
+          configMap:
+            name: {{ include "dataverseup.fullname" . }}-bootstrap-chain
+            defaultMode: 0555
+            items:
+              - key: bootstrap-chain.sh
+                path: bootstrap-chain.sh
+              - key: apply-branding.sh
+                path: apply-branding.sh
+              - key: seed-content.sh
+                path: seed-content.sh
+        - name: branding-env
+          configMap:
+            name: {{ include "dataverseup.fullname" . }}-bootstrap-chain
+            items:
+              - key: branding.env
+                path: branding.env
+        - name: seed-flat
+          configMap:
+            name: {{ include "dataverseup.fullname" . }}-bootstrap-chain
+            items:
+              - key: demo-collection.json
+                path: demo-collection.json
+              - key: dataset-images.json
+                path: dataset-images.json
+              - key: dataset-tabular.json
+                path: dataset-tabular.json
+              - key: files_1x1.png
+                path: files_1x1.png
+              - key: files_badge.svg
+                path: files_badge.svg
+              - key: files_readme.txt
+                path: files_readme.txt
+              - key: files_sample.csv
+                path: files_sample.csv
+        - name: bootstrap-work
+          emptyDir: {}
+{{- end }}
